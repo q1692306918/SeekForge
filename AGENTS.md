@@ -1,3 +1,16 @@
+# SeekForge Project Rules
+
+- 小任务小改动坚决不要使用 superpowers。
+- 使用 superpowers 插件/skill 时，整个会话要严格遵守 superpowers 流程。
+- 通过创建/修改必要文档时刻保持 AI-Agent 可持续性和人类可读性。
+
+## SeekForge Direction
+
+- This workspace is a DeepSeek-native Codex fork.
+- Preserve Codex's harness strengths: MCP, plugins, skills, memory, sandbox, approval, TUI/exec flows, and upstream compatibility.
+- Do not preserve OpenAI/ChatGPT native login as a product capability for this fork.
+- Prefer medium-scope changes that keep the fork rebase-friendly.
+
 # Rust/codex-rs
 
 In the codex-rs folder where the rust code lives:
