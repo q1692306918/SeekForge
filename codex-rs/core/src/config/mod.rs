@@ -26,6 +26,7 @@ use codex_config::ThreadConfigLoader;
 use codex_config::config_toml::ConfigLockfileToml;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::DEFAULT_PROJECT_DOC_MAX_BYTES;
+use codex_config::config_toml::DeepSeekNativeToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_config::config_toml::RealtimeAudioConfig;
 use codex_config::config_toml::RealtimeConfig;
@@ -71,11 +72,14 @@ use codex_install_context::InstallContext;
 use codex_login::AuthManagerConfig;
 use codex_mcp::McpConfig;
 use codex_memories_read::memory_root;
+use codex_model_provider_info::DEEPSEEK_PROVIDER_ID;
 use codex_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
 use codex_model_provider_info::built_in_model_providers;
 use codex_model_provider_info::merge_configured_model_providers;
+use codex_models_manager::DEEPSEEK_DEFAULT_MODEL;
+use codex_models_manager::DEEPSEEK_REVIEW_MODEL;
 use codex_models_manager::ModelsManagerConfig;
 use codex_protocol::config_types::AltScreenMode;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
@@ -560,6 +564,9 @@ pub struct Config {
     /// Model used specifically for review sessions.
     pub review_model: Option<String>,
 
+    /// SeekForge-specific DeepSeek-native controls.
+    pub deepseek_native: DeepSeekNativeConfig,
+
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
 
@@ -992,6 +999,34 @@ pub struct Config {
 
     /// OTEL configuration (exporter type, endpoint, headers, etc.).
     pub otel: codex_config::types::OtelConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeepSeekNativeConfig {
+    pub planner_model: String,
+    pub planner_enabled: bool,
+}
+
+impl Default for DeepSeekNativeConfig {
+    fn default() -> Self {
+        Self {
+            planner_model: DEEPSEEK_REVIEW_MODEL.to_string(),
+            planner_enabled: false,
+        }
+    }
+}
+
+impl From<Option<DeepSeekNativeToml>> for DeepSeekNativeConfig {
+    fn from(value: Option<DeepSeekNativeToml>) -> Self {
+        let defaults = Self::default();
+        match value {
+            Some(value) => Self {
+                planner_model: value.planner_model.unwrap_or(defaults.planner_model),
+                planner_enabled: value.planner_enabled,
+            },
+            None => defaults,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -2955,7 +2990,7 @@ impl Config {
 
         let model_provider_id = model_provider
             .or(cfg.model_provider)
-            .unwrap_or_else(|| "openai".to_string());
+            .unwrap_or_else(|| DEEPSEEK_PROVIDER_ID.to_string());
         let model_provider = model_providers
             .get(&model_provider_id)
             .ok_or_else(|| {
@@ -3115,7 +3150,12 @@ impl Config {
 
         let forced_login_method = cfg.forced_login_method;
 
-        let model = model.or(cfg.model);
+        let model = model
+            .or(cfg.model)
+            .or_else(|| {
+                (model_provider_id == DEEPSEEK_PROVIDER_ID)
+                    .then(|| DEEPSEEK_DEFAULT_MODEL.to_string())
+            });
         let notices = cfg.notice.unwrap_or_default();
         let service_tier = match service_tier_override {
             Some(Some(service_tier)) => Some(service_tier),
@@ -3194,7 +3234,13 @@ impl Config {
             .or_else(|| InstallContext::current().bundled_zsh_path())
             .map(AbsolutePathBuf::into_path_buf);
 
-        let review_model = override_review_model.or(cfg.review_model);
+        let review_model = override_review_model
+            .or(cfg.review_model)
+            .or_else(|| {
+                (model_provider_id == DEEPSEEK_PROVIDER_ID)
+                    .then(|| DEEPSEEK_REVIEW_MODEL.to_string())
+            });
+        let deepseek_native = DeepSeekNativeConfig::from(cfg.deepseek_native);
 
         let check_for_update_on_startup = cfg.check_for_update_on_startup.unwrap_or(true);
         let model_catalog = load_model_catalog(cfg.model_catalog_json.clone())?;
@@ -3336,6 +3382,7 @@ impl Config {
             model,
             service_tier,
             review_model,
+            deepseek_native,
             model_context_window: cfg.model_context_window,
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
             model_auto_compact_token_limit_scope: cfg

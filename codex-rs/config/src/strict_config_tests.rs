@@ -125,3 +125,42 @@ collapsed = true"#;
 
     assert_eq!(error, None);
 }
+
+#[test]
+fn strict_config_accepts_deepseek_native_settings() {
+    let path = Path::new("/tmp/config.toml");
+    let contents = r#"
+[deepseek_native]
+planner_model = "deepseek-v4-pro"
+planner_enabled = true"#;
+
+    let error = config_error_from_ignored_toml_fields::<ConfigToml>(path, contents);
+
+    assert_eq!(error, None);
+}
+
+#[test]
+fn strict_config_rejects_unknown_deepseek_native_key() {
+    let path = Path::new("/tmp/config.toml");
+    let contents = r#"
+[deepseek_native]
+codegraph_enabled = true"#;
+
+    let error = config_error_from_ignored_toml_fields::<ConfigToml>(path, contents)
+        .expect("unknown deepseek_native field error");
+
+    assert_eq!(
+        error,
+        ConfigError::new(
+            path.to_path_buf(),
+            TextRange {
+                start: TextPosition { line: 3, column: 1 },
+                end: TextPosition {
+                    line: 3,
+                    column: 17,
+                },
+            },
+            "unknown configuration field `deepseek_native.codegraph_enabled`",
+        )
+    );
+}

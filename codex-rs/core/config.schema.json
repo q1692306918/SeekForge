@@ -763,6 +763,19 @@
       },
       "type": "object"
     },
+    "DeepSeekNativeToml": {
+      "additionalProperties": false,
+      "properties": {
+        "planner_enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "planner_model": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "ExperimentalRequestUserInput": {
       "additionalProperties": false,
       "properties": {
@@ -4317,6 +4330,13 @@
             "responses"
           ],
           "type": "string"
+        },
+        {
+          "description": "The Chat Completions API exposed by DeepSeek-compatible providers at `/chat/completions`.",
+          "enum": [
+            "chat_completions"
+          ],
+          "type": "string"
         }
       ]
     },
@@ -4428,6 +4448,15 @@
         }
       ],
       "description": "Debugging and reproducibility settings."
+    },
+    "deepseek_native": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/DeepSeekNativeToml"
+        }
+      ],
+      "default": null,
+      "description": "DeepSeek-native fork settings. Defaults are conservative so the planner does not change execution behavior until explicitly enabled."
     },
     "default_permissions": {
       "description": "Default permissions profile to apply. Names starting with `:` refer to built-in profiles; other names are resolved from the `[permissions]` table.",

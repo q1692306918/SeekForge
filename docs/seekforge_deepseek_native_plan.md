@@ -82,6 +82,38 @@ The fork needs a DeepSeek runtime adapter that maps Codex's internal request,
 tool, stream, usage, and history model onto DeepSeek-compatible chat completion
 requests.
 
+Codex baseline audit:
+
+- Sub-agents/context isolation: Codex already does this well. Multi-agent v2
+  creates separate child threads, returns child metadata/status to the parent,
+  uses explicit inter-agent communication tools, and only forks parent history
+  into a child through sanitized fork modes. SeekForge should preserve and
+  snapshot-test this behavior under DeepSeek; it should not port Reasonix's
+  sub-agent architecture as a replacement.
+- Token usage: Codex already has canonical `TokenUsage` fields for input,
+  cached input, output, reasoning output, totals, app-server notifications, and
+  TUI/exec display. DeepSeek cache fields should feed this existing model
+  instead of introducing parallel accounting.
+- Reasoning: Codex already has reasoning items, reasoning summary/raw events,
+  rollout mapping, and display controls. DeepSeek `reasoning_content` should map
+  into those existing events/items and must be filtered from outgoing chat
+  history.
+- Skills: Codex's skill system is stronger than Reasonix's simple prompt
+  injection. It already renders ordered skill metadata, aliases long paths,
+  applies a context budget, and lazy-loads full skill bodies only when selected.
+  The DeepSeek work is prefix stability, not replacing skill discovery.
+- Compaction: Codex already has inline compaction, remote OpenAI compaction,
+  hooks, rollout traceability, tool-call integrity handling, and token-window
+  logic. DeepSeek should use the existing non-remote path and provider-specific
+  limits.
+- Retry/auth/provider config: Codex already has env-key provider auth,
+  request/stream retry knobs, stream idle timeout, and provider capability
+  plumbing. The DeepSeek adapter should reuse these surfaces.
+- New work remains: Chat Completions transport, chat-message serialization,
+  DeepSeek streaming tool-call accumulation, DeepSeek-specific usage parsing,
+  live cache probes, DeepSeek model defaults/catalog, and hiding the
+  OpenAI/ChatGPT login product path.
+
 ## 5. Target Configuration
 
 Default behavior:
@@ -140,16 +172,34 @@ Responsibilities:
 - Convert Codex tool schemas to chat-completions `tools`.
 - Parse streaming text deltas.
 - Parse streaming reasoning deltas if DeepSeek emits a `reasoning_content`-style
-  field; display dimly or route through existing reasoning events.
+  field; route them through Codex's existing reasoning summary/raw events and
+  rollout item model instead of adding a parallel reasoning UI path.
+- Never send `reasoning_content` back in later requests. Treat it as
+  response-only data for display, logs, and rollout archives. Re-uploading it
+  turns hidden reasoning into paid prompt input and can break DeepSeek request
+  validation/cache behavior.
 - Accumulate streamed tool-call deltas by index and emit complete tool calls.
+- Emit a tool-call-start event as soon as the streamed function name is known,
+  then emit the complete tool call after arguments finish streaming.
 - Preserve tool-call ordering and IDs so approvals, sandbox, and MCP execution
   remain untouched.
+- Always serialize a `content` field for chat messages, even when empty. DeepSeek
+  rejects some assistant/tool-call messages when `content` is omitted.
 - Normalize usage:
   - input tokens.
   - output tokens.
-  - cache-hit/cache-miss prompt tokens when DeepSeek exposes them.
+  - DeepSeek top-level `prompt_cache_hit_tokens` and
+    `prompt_cache_miss_tokens`, mapped into Codex's existing
+    `cached_input_tokens` and non-cached input display.
+  - OpenAI-compatible nested `prompt_tokens_details.cached_tokens`, when using
+    other compatible endpoints.
+  - reasoning tokens when the backend exposes them separately.
 - Map provider errors into existing Codex error types with actionable messages.
-- Keep retries and idle timeout behavior consistent with current Codex settings.
+- Keep retries and idle timeout behavior consistent with current Codex settings:
+  reuse `request_max_retries`, `stream_max_retries`, and
+  `stream_idle_timeout_ms`; retry transient network failures plus 408, 429, and
+  5xx with bounded backoff; surface 401/403 as `DEEPSEEK_API_KEY`
+  configuration problems.
 
 Provider capabilities:
 
@@ -159,6 +209,18 @@ Provider capabilities:
   local tools/MCP.
 - Keep MCP tools, shell tools, file tools, and skills exactly as Codex exposes
   them today.
+
+Cost and observability:
+
+- Add cache-aware pricing fields to the provider/model metadata where practical:
+  cached input, fresh input, output, and reasoning output if DeepSeek bills it
+  separately.
+- Show per-turn cache usage as absolute numbers, e.g. `N cached / M new`, not
+  only a percentage. Percentages can look worse on long fresh turns even when the
+  stable prefix is still hitting.
+- Show session-level cache hit/miss totals in debug/TUI surfaces when available.
+- Preserve raw DeepSeek usage fields in debug traces so pricing assumptions can
+  be audited later.
 
 ## 7. Model Catalog
 
@@ -229,6 +291,16 @@ Rules:
 - Stable project memory/AGENTS.md prefix content within a session.
 - Put volatile turn data in the tail, not in the prefix.
 - Avoid changing model/provider metadata inside the prompt prefix mid-session.
+- Plan-mode markers must ride in the user turn tail, not mutate system
+  instructions or the active tool list.
+- Mid-session memory writes must ride the next user turn as a memory update; fold
+  them into the stable prefix only on a new session/resume boundary.
+- Background job completion notices must ride the next user turn, not mutate the
+  prefix.
+- Preserve Codex's lazy skill body model. A stable skill index
+  (name/description/path alias) can live in the prefix, but full playbooks
+  should load only when the skill is selected and should not be permanently
+  injected.
 
 Engineering tasks:
 
@@ -240,6 +312,11 @@ Engineering tasks:
   debug logs or telemetry.
 - Avoid changing existing Codex memory semantics; only stabilize where content
   lands in the model request.
+- Add a live, env-gated DeepSeek cache probe test that can be run manually with
+  `DEEPSEEK_API_KEY` to confirm real cache-hit behavior, `reasoning_content`
+  behavior, and prompt-token deltas.
+- Add a regression test proving `reasoning_content` is never serialized into an
+  outgoing DeepSeek chat request.
 
 ## 10. Planner / Executor Collaboration
 
@@ -266,6 +343,8 @@ Execution:
   execution.
 - Planner session and executor session never mix histories.
 - Approvals and sandbox remain executor-side.
+- Planner output should not be appended to the executor's stable prefix. It is
+  turn-specific guidance and belongs in the executor tail.
 
 Rollout:
 
@@ -276,7 +355,9 @@ Rollout:
 ## 11. Compaction
 
 Current Codex has local and remote compaction paths. Remote compaction is
-OpenAI-specific and should not be used for DeepSeek unless deliberately adapted.
+OpenAI/Azure-specific and is already gated by provider capability, so DeepSeek
+should naturally use the inline path unless a DeepSeek remote compaction API is
+deliberately added later.
 
 DeepSeek behavior:
 
@@ -287,27 +368,70 @@ DeepSeek behavior:
 - Tune default auto-compact limit around DeepSeek context windows and observed
   latency/cost.
 - Keep manual `/compact`.
+- Treat compaction as an intentional cache-reset point. Between compactions,
+  preserve append-only session growth so DeepSeek cache hit rates can climb.
+- Archive or preserve dropped originals through the existing Codex rollout
+  history so summaries remain auditable.
 
 Tests:
 
 - Compact with DeepSeek provider uses local adapter, not OpenAI remote compact.
 - Compacted history preserves tool-call/result integrity.
 - Compaction summary prompt remains overrideable with existing config.
+- Cache-hit tests should show the expected hit-rate drop after compaction and
+  recovery as the new prefix stabilizes.
 
-## 12. Code Intelligence
+## 12. Sub-Agents And Context Isolation
 
-Reasonix's CodeGraph idea is valuable but should come after the provider path is
-stable.
+Reasonix uses sub-agents to keep broad exploration from polluting the parent
+context, but Codex already has a stronger version of this pattern. SeekForge
+should preserve Codex's multi-agent/sub-agent machinery and make its DeepSeek
+behavior cache-aware.
 
-Approach:
+Existing Codex behavior to preserve:
 
-- Keep existing Codex file search and `rg`-first behavior.
-- Add optional CodeGraph-style local symbol/call-graph tools later.
-- Prefer MCP or plugin integration first, so the core does not absorb a large
-  indexer.
-- Enable per-project opt-in before default-on.
+- Child agents run as separate threads/sessions.
+- `spawn_agent` returns metadata such as agent ID, task name, and nickname, not
+  a full child transcript.
+- `wait_agent` reports status; detailed parent/child communication goes through
+  explicit mailbox-style tools such as `send_message` and `assign_task`.
+- Parent history may be forked into a child only through explicit fork modes,
+  and that fork is sanitized to remove non-final assistant/tool chatter.
+- Child tool calls, file reads, and reasoning do not automatically become parent
+  prompt history.
 
-## 13. Implementation Milestones
+Guidelines:
+
+- Sub-agents should run in their own model sessions.
+- Parent context should receive only the distilled answer unless the user asks
+  for full details.
+- Sub-agent tool calls, file reads, and reasoning should not automatically enter
+  the parent prompt.
+- Sub-agent model selection should remain configurable; a cheap executor model
+  can handle focused exploration, while `deepseek-v4-pro` can be reserved for
+  planning/review roles.
+
+Tests:
+
+- A sub-agent run does not inject its intermediate tool traffic into the parent
+  DeepSeek request.
+- Sub-agent final answers preserve useful file/line citations.
+
+## 13. Explicitly Out Of Scope: CodeGraph
+
+CodeGraph is not part of this SeekForge fork plan. The current product goal is a
+DeepSeek-native Codex harness, not a new code-indexing architecture.
+
+Rules:
+
+- Keep existing Codex file search, `rg`-first behavior, MCP tools, and plugin
+  extension points.
+- Do not add CodeGraph config, background indexing, symbol graph storage, or
+  planner dependencies in this phase.
+- If code intelligence is revisited later, treat it as a separate opt-in
+  project with its own design, tests, and upstream-compatibility review.
+
+## 14. Implementation Milestones
 
 ### Milestone A: Repository and Defaults
 
@@ -329,6 +453,12 @@ Verification:
 - Add Chat Completions wire path or DeepSeek-specific adapter.
 - Implement streaming text/tool-call parsing.
 - Implement auth via `DEEPSEEK_API_KEY`.
+- Drop `reasoning_content` from outgoing request history while retaining it for
+  display/archive.
+- Always serialize message `content`, including empty assistant messages with
+  tool calls.
+- Parse DeepSeek cache-hit/cache-miss usage fields.
+- Add cache-aware provider pricing metadata.
 - Add mock-server integration tests.
 
 Verification:
@@ -336,6 +466,10 @@ Verification:
 - A mock DeepSeek stream can produce assistant text.
 - A mock DeepSeek stream can request a shell/file/MCP tool.
 - Tool results loop back into the next model request.
+- A mock DeepSeek stream can emit partial tool-call deltas that are accumulated
+  into one complete tool call.
+- Outgoing request snapshots never contain `reasoning_content`.
+- Usage fixtures parse cached/new/reasoning token counts.
 
 ### Milestone C: Product Surface
 
@@ -356,11 +490,18 @@ Verification:
 - Add prefix-stability tests.
 - Surface cache-hit usage where available.
 - Tune tool schema ordering.
+- Keep plan-mode, mid-session memory updates, and background job notices in the
+  user-turn tail.
+- Preserve Codex's lazy skill bodies while exposing a stable skill index.
+- Add optional live DeepSeek cache probe.
 
 Verification:
 
 - Snapshot tests show deterministic prefix bytes.
 - Cache metrics are parsed from mock usage payloads.
+- Toggling plan mode does not change system instructions or tool schema bytes.
+- Adding memory mid-session does not mutate the prefix for the active session.
+- Live cache probe can be run manually and reports hit/miss/reasoning behavior.
 
 ### Milestone E: Planner / Executor
 
@@ -379,27 +520,81 @@ Verification:
 - Ensure DeepSeek uses local compaction.
 - Tune default token limits.
 - Keep rollout traceability.
+- Treat compaction as the only routine cache-reset point.
 
 Verification:
 
 - Auto compact works with mock DeepSeek provider.
 - Manual `/compact` works in TUI.
 - Rollout history records replacement history.
+- Cache tests show hit-rate collapse/recovery around compaction.
 
-### Milestone G: Optional CodeGraph
+### Milestone G: Sub-Agent Isolation Verification
 
-- Prototype as MCP/plugin.
-- Compare against existing search tools.
-- Make opt-in, then decide whether to bundle.
+- Verify Codex sub-agent flows remain isolated with the DeepSeek adapter.
+- Keep parent context compact by returning distilled answers instead of full
+  sub-agent transcripts.
 
-## 14. Risk Register
+Verification:
+
+- Parent DeepSeek request snapshots do not include sub-agent intermediate tool
+  traffic.
+- Sub-agent final answers keep enough file/line evidence for follow-up work.
+
+## 15. Reasonix-Inspired Gaps After Codex Baseline
+
+Port only the DeepSeek-specific ideas as Codex-native implementation details,
+not as a Reasonix architecture rewrite.
+
+New DeepSeek adapter work:
+
+- Add Chat Completions transport or a DeepSeek-specific adapter.
+- Map Codex internal prompt/tool/history items to DeepSeek chat messages.
+- Do not resend `reasoning_content`; display/archive only.
+- Parse DeepSeek `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens`.
+- Accumulate streamed tool-call deltas by index and expose early tool-call-start
+  events.
+- Always serialize chat message `content`.
+- Add real DeepSeek cache probes guarded by `DEEPSEEK_API_KEY`.
+
+Adapt existing Codex systems:
+
+- Map DeepSeek cache/reasoning usage into existing `TokenUsage`, app-server, and
+  TUI/exec displays.
+- Track cache-aware cost with separate cached-input pricing, preferably in
+  provider/model metadata rather than a new accounting subsystem.
+- Keep plan-mode and volatile runtime notices in the user-turn tail.
+- Add prefix-stability tests for normal turns, plan mode, memory updates, skill
+  indexes, and compaction boundaries.
+- Reuse Codex retry/auth/provider configuration; only add DeepSeek-specific
+  error messages where needed.
+- Align compaction boundaries to avoid orphan tool results.
+
+Already handled better by Codex; verify rather than port:
+
+- Sub-agent context isolation and thread separation.
+- Lazy skill bodies plus budgeted skill metadata/index rendering.
+- Token usage propagation through protocol, app-server, TUI, and exec.
+- Reasoning event/archive/display plumbing.
+- Inline compaction, rollout traceability, hooks, and tool-call integrity.
+- Env-key provider auth and retry/idle-timeout knobs.
+
+## 16. Risk Register
 
 - DeepSeek may not match OpenAI Responses semantics. Mitigation: dedicated chat
   adapter and mock protocol tests.
 - Tool-call streaming details may differ. Mitigation: accumulator tests for
   partial deltas and multi-tool calls.
+- Reasoning content may leak back into prompt history and inflate cost.
+  Mitigation: outgoing request snapshots must reject `reasoning_content`.
 - Prefix stability can be broken by dynamic instructions. Mitigation: snapshot
   serialized requests and keep volatile context in tail.
+- Cache metrics may be misread if only percentages are shown. Mitigation: show
+  absolute cached/new counts and preserve raw usage fields.
+- Reimplementing Codex-native systems from Reasonix can regress harness quality.
+  Mitigation: classify every borrowed idea as preserve, adapt, or add before
+  coding, and snapshot-test DeepSeek adapter behavior against existing Codex
+  contracts.
 - Removing login too aggressively can break app-server/plugin code. Mitigation:
   hide from product path first, remove later only with focused tests.
 - Broad branding rename can create constant upstream conflicts. Mitigation:
@@ -407,7 +602,7 @@ Verification:
 - Model names and context limits may change. Mitigation: TOML overrides and
   static catalog kept small.
 
-## 15. First Code Change Recommendation
+## 17. First Code Change Recommendation
 
 Start with the smallest runtime-relevant slice:
 

@@ -12,6 +12,7 @@ use codex_config::config_toml::AgentRoleToml;
 use codex_config::config_toml::AgentsToml;
 use codex_config::config_toml::AutoReviewToml;
 use codex_config::config_toml::ConfigToml;
+use codex_config::config_toml::DeepSeekNativeToml;
 use codex_config::config_toml::ExperimentalRequestUserInput;
 use codex_config::config_toml::ProjectConfig;
 use codex_config::config_toml::RealtimeConfig;
@@ -69,6 +70,8 @@ use codex_features::FeaturesToml;
 use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_model_provider_info::WireApi;
+use codex_models_manager::DEEPSEEK_DEFAULT_MODEL;
+use codex_models_manager::DEEPSEEK_REVIEW_MODEL;
 use codex_models_manager::bundled_models_response;
 use codex_network_proxy::NetworkMode;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -582,6 +585,61 @@ region = "us-west-2"
             .and_then(|aws| aws.region.as_deref()),
         Some("us-west-2")
     );
+}
+
+#[tokio::test]
+async fn load_config_defaults_to_deepseek_provider() {
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        tempdir().expect("tempdir").abs(),
+    )
+    .await
+    .expect("load config");
+
+    assert_eq!(config.model_provider_id, "deepseek");
+    assert_eq!(config.model_provider.name, "DeepSeek");
+    assert_eq!(
+        config.model_provider.base_url.as_deref(),
+        Some("https://api.deepseek.com")
+    );
+    assert_eq!(
+        config.model_provider.env_key.as_deref(),
+        Some("DEEPSEEK_API_KEY")
+    );
+    assert_eq!(
+        config.model_provider.wire_api.to_string(),
+        "chat_completions"
+    );
+    assert!(!config.model_provider.requires_openai_auth);
+    assert!(!config.model_provider.supports_websockets);
+    assert_eq!(config.model.as_deref(), Some(DEEPSEEK_DEFAULT_MODEL));
+    assert_eq!(config.review_model.as_deref(), Some(DEEPSEEK_REVIEW_MODEL));
+    assert_eq!(config.deepseek_native.planner_model, DEEPSEEK_REVIEW_MODEL);
+    assert!(!config.deepseek_native.planner_enabled);
+}
+
+#[tokio::test]
+async fn load_config_accepts_deepseek_native_planner_overrides() {
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            deepseek_native: Some(DeepSeekNativeToml {
+                planner_model: Some("deepseek-v4-pro-custom".to_string()),
+                planner_enabled: true,
+            }),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        tempdir().expect("tempdir").abs(),
+    )
+    .await
+    .expect("load config");
+
+    assert_eq!(
+        config.deepseek_native.planner_model,
+        "deepseek-v4-pro-custom"
+    );
+    assert!(config.deepseek_native.planner_enabled);
 }
 
 #[tokio::test]

@@ -239,6 +239,14 @@ fn should_use_remote_compact_task_for_azure_provider() {
 
     assert!(should_use_remote_compact_task(&provider));
 }
+
+#[test]
+fn should_not_use_remote_compact_task_for_deepseek_provider() {
+    let provider = ModelProviderInfo::create_deepseek_provider();
+
+    assert!(!should_use_remote_compact_task(&provider));
+}
+
 #[tokio::test]
 async fn process_compacted_history_replaces_developer_messages() {
     let compacted_history = vec![

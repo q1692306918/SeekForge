@@ -105,6 +105,12 @@ fn set_workspace_cwd(config: &mut Config, cwd: AbsolutePathBuf) {
         .set_workspace_roots(config.workspace_roots.clone());
 }
 
+fn set_openai_provider(config: &mut Config) {
+    config.model_provider_id = "openai".to_string();
+    config.model_provider =
+        ModelProviderInfo::create_openai_provider(/*openai_base_url*/ None);
+}
+
 fn test_status_account_display() -> Option<StatusAccountDisplay> {
     None
 }
@@ -201,7 +207,7 @@ async fn status_snapshot_includes_reasoning_details() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
     config.model = Some("gpt-5.1-codex-max".to_string());
-    config.model_provider_id = "openai".to_string();
+    set_openai_provider(&mut config);
     config.model_reasoning_summary = Some(ReasoningSummary::Detailed);
     set_workspace_cwd(&mut config, test_path_buf("/workspace/tests").abs());
     config
@@ -275,7 +281,7 @@ async fn status_permissions_non_default_workspace_write_uses_workspace_label() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
     config.model = Some("gpt-5.1-codex-max".to_string());
-    config.model_provider_id = "openai".to_string();
+    set_openai_provider(&mut config);
     config
         .permissions
         .approval_policy
@@ -791,7 +797,7 @@ async fn status_snapshot_includes_forked_from() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
     config.model = Some("gpt-5.1-codex-max".to_string());
-    config.model_provider_id = "openai".to_string();
+    set_openai_provider(&mut config);
     set_workspace_cwd(&mut config, test_path_buf("/workspace/tests").abs());
 
     let account_display = test_status_account_display();
@@ -845,7 +851,7 @@ async fn status_snapshot_includes_monthly_limit() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
     config.model = Some("gpt-5.1-codex-max".to_string());
-    config.model_provider_id = "openai".to_string();
+    set_openai_provider(&mut config);
     set_workspace_cwd(&mut config, test_path_buf("/workspace/tests").abs());
 
     let account_display = test_status_account_display();
@@ -908,7 +914,7 @@ async fn status_snapshot_uses_generic_limit_labels_for_unsupported_windows() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
     config.model = Some("gpt-5.1-codex-max".to_string());
-    config.model_provider_id = "openai".to_string();
+    set_openai_provider(&mut config);
     set_workspace_cwd(&mut config, test_path_buf("/workspace/tests").abs());
 
     let account_display = test_status_account_display();
@@ -1217,7 +1223,7 @@ async fn status_snapshot_truncates_in_narrow_terminal() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
     config.model = Some("gpt-5.1-codex-max".to_string());
-    config.model_provider_id = "openai".to_string();
+    set_openai_provider(&mut config);
     config.model_reasoning_summary = Some(ReasoningSummary::Detailed);
     set_workspace_cwd(&mut config, test_path_buf("/workspace/tests").abs());
 

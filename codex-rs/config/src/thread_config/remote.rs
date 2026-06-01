@@ -153,6 +153,7 @@ fn model_provider_from_proto(
     let id = provider.id;
     let wire_api = match proto::WireApi::try_from(provider.wire_api) {
         Ok(proto::WireApi::Responses) => WireApi::Responses,
+        Ok(proto::WireApi::ChatCompletions) => WireApi::ChatCompletions,
         Ok(proto::WireApi::Unspecified) => {
             return Err(parse_error("remote thread config omitted wire_api"));
         }
@@ -283,6 +284,7 @@ fn proto_string_map(values: HashMap<String, String>) -> proto::StringMap {
 fn proto_wire_api(wire_api: WireApi) -> proto::WireApi {
     match wire_api {
         WireApi::Responses => proto::WireApi::Responses,
+        WireApi::ChatCompletions => proto::WireApi::ChatCompletions,
     }
 }
 
@@ -399,6 +401,20 @@ mod tests {
         let (id, actual) = model_provider_from_proto(proto).expect("model provider from proto");
 
         assert_eq!(id, "local");
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn chat_completions_model_provider_proto_roundtrips_through_domain_type() {
+        let expected = ModelProviderInfo {
+            wire_api: WireApi::ChatCompletions,
+            supports_websockets: false,
+            ..expected_provider()
+        };
+        let proto = model_provider_to_proto("deepseek", expected.clone());
+        let (id, actual) = model_provider_from_proto(proto).expect("model provider from proto");
+
+        assert_eq!(id, "deepseek");
         assert_eq!(actual, expected);
     }
 

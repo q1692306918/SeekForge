@@ -919,6 +919,38 @@ async fn static_manager_reads_latest_auth_mode() {
 }
 
 #[test]
+fn bundled_models_default_to_deepseek_catalog() {
+    let response = crate::bundled_models_response()
+        .unwrap_or_else(|err| panic!("bundled models catalog should parse: {err}"));
+    let mut models = response.models.clone();
+    models.sort_by_key(|model| model.priority);
+    let presets: Vec<ModelPreset> = models.into_iter().map(Into::into).collect();
+
+    let default_model = presets
+        .iter()
+        .find(|preset| preset.show_in_picker)
+        .expect("bundled catalog should include a visible default model");
+    assert_eq!(default_model.model, "deepseek-v4-flash");
+
+    let flash = response
+        .models
+        .iter()
+        .find(|model| model.slug == "deepseek-v4-flash")
+        .expect("DeepSeek flash model should be bundled");
+    let pro = response
+        .models
+        .iter()
+        .find(|model| model.slug == "deepseek-v4-pro")
+        .expect("DeepSeek pro model should be bundled");
+    assert_eq!(flash.display_name, "DeepSeek V4 Flash");
+    assert_eq!(pro.display_name, "DeepSeek V4 Pro");
+    assert_eq!(flash.visibility, ModelVisibility::List);
+    assert_eq!(pro.visibility, ModelVisibility::List);
+    assert_eq!(flash.context_window, Some(128_000));
+    assert_eq!(pro.context_window, Some(128_000));
+}
+
+#[test]
 fn bundled_models_json_roundtrips() {
     let response = crate::bundled_models_response()
         .unwrap_or_else(|err| panic!("bundled models.json should parse: {err}"));

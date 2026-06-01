@@ -34,6 +34,157 @@ fn normalize_git_remote_url(url: &str) -> String {
 const TEST_INSTALLATION_ID: &str = "11111111-1111-4111-8111-111111111111";
 
 #[tokio::test]
+async fn chat_completions_provider_streams_through_core_client() {
+    core_test_support::skip_if_no_network!();
+
+    let server = responses::start_mock_server().await;
+    let response_body = [
+        "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3,\"total_tokens\":10,\"prompt_cache_hit_tokens\":4,\"prompt_cache_miss_tokens\":3}}\n\n",
+        "data: [DONE]\n\n",
+    ]
+    .concat();
+    let request_recorder = responses::mount_chat_completions_sse_once(&server, response_body).await;
+
+    let provider = ModelProviderInfo {
+        name: "deepseek".into(),
+        base_url: Some(format!("{}/v1", server.uri())),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        auth: None,
+        aws: None,
+        wire_api: WireApi::ChatCompletions,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: Some(0),
+        stream_max_retries: Some(0),
+        stream_idle_timeout_ms: Some(5_000),
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let codex_home = TempDir::new().expect("failed to create TempDir");
+    let mut config = load_default_config_for_test(&codex_home).await;
+    config.model = Some("deepseek-v4-flash".to_string());
+    config.model_provider_id = provider.name.clone();
+    config.model_provider = provider.clone();
+    let effort = config.model_reasoning_effort;
+    let summary = config.model_reasoning_summary;
+    let model = config.model.clone().expect("model configured");
+    let config = Arc::new(config);
+
+    let thread_id = ThreadId::new();
+    let session_source = SessionSource::Exec;
+    let model_info =
+        codex_core::test_support::construct_model_info_offline(model.as_str(), &config);
+    let session_telemetry = SessionTelemetry::new(
+        thread_id,
+        model.as_str(),
+        model_info.slug.as_str(),
+        /*account_id*/ None,
+        Some("test@test.com".to_string()),
+        /*auth_mode*/ None,
+        "test_originator".to_string(),
+        /*log_user_prompts*/ false,
+        "test".to_string(),
+        session_source.clone(),
+    );
+
+    let client = ModelClient::new(
+        /*auth_manager*/ None,
+        thread_id.into(),
+        thread_id,
+        /*installation_id*/ TEST_INSTALLATION_ID.to_string(),
+        provider,
+        session_source,
+        config.model_verbosity,
+        /*enable_request_compression*/ false,
+        /*include_timing_metrics*/ false,
+        /*beta_features_header*/ None,
+        /*attestation_provider*/ None,
+    );
+    let mut client_session = client.new_session();
+
+    let mut prompt = Prompt::default();
+    prompt.base_instructions.text = "base instructions".to_string();
+    prompt.input = vec![ResponseItem::Message {
+        id: None,
+        role: "user".into(),
+        content: vec![ContentItem::InputText {
+            text: "hello?".into(),
+        }],
+        phase: None,
+    }];
+
+    let mut stream = client_session
+        .stream(
+            &prompt,
+            &model_info,
+            &session_telemetry,
+            effort,
+            summary.unwrap_or(model_info.default_reasoning_summary),
+            /*service_tier*/ None,
+            /*turn_metadata_header*/ None,
+            &codex_rollout_trace::InferenceTraceContext::disabled(),
+        )
+        .await
+        .expect("chat completions stream failed");
+
+    let mut saw_text_delta = false;
+    let mut completed_usage = None;
+    while let Some(event) = stream.next().await {
+        match event.expect("stream event should be ok") {
+            ResponseEvent::OutputTextDelta(delta) if delta == "hello" => {
+                saw_text_delta = true;
+            }
+            ResponseEvent::Completed { token_usage, .. } => {
+                completed_usage = token_usage;
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    assert!(
+        saw_text_delta,
+        "expected streamed text delta from chat adapter"
+    );
+    assert_eq!(
+        completed_usage,
+        Some(codex_protocol::protocol::TokenUsage {
+            input_tokens: 7,
+            cached_input_tokens: 4,
+            output_tokens: 3,
+            reasoning_output_tokens: 0,
+            total_tokens: 10,
+        })
+    );
+
+    let request = request_recorder.single_request();
+    assert_eq!(request.path(), "/v1/chat/completions");
+    assert_eq!(
+        request.body_json(),
+        serde_json::json!({
+            "model": "deepseek-v4-flash",
+            "messages": [
+                {"role": "system", "content": "base instructions"},
+                {"role": "user", "content": "hello?"}
+            ],
+            "stream": true,
+            "stream_options": {"include_usage": true}
+        })
+    );
+    let expected_window_id = format!("{thread_id}:0");
+    assert_eq!(
+        request.header("x-codex-window-id").as_deref(),
+        Some(expected_window_id.as_str())
+    );
+}
+
+#[tokio::test]
 async fn responses_stream_includes_subagent_header_on_review() {
     core_test_support::skip_if_no_network!();
 

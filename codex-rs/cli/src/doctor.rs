@@ -3394,6 +3394,36 @@ mod tests {
     }
 
     #[test]
+    fn provider_specific_auth_reports_deepseek_key_without_login_remediation() {
+        let check = provider_specific_auth_check(
+            /*requires_openai_auth*/ false,
+            Some("DEEPSEEK_API_KEY"),
+            Some("Set DEEPSEEK_API_KEY to your DeepSeek API key."),
+            Vec::new(),
+            |_| false,
+        )
+        .expect("DeepSeek should produce a provider-specific auth check");
+
+        assert_eq!(check.status, CheckStatus::Fail);
+        assert!(
+            check
+                .details
+                .iter()
+                .any(|detail| detail == "provider auth env var: DEEPSEEK_API_KEY (missing)")
+        );
+        assert_eq!(
+            check.remediation,
+            Some("Set DEEPSEEK_API_KEY to your DeepSeek API key.".to_string())
+        );
+        assert!(
+            check
+                .remediation
+                .as_deref()
+                .is_none_or(|remediation| !remediation.contains("codex login"))
+        );
+    }
+
+    #[test]
     fn stored_auth_validation_rejects_missing_api_key() {
         let auth = AuthDotJson {
             auth_mode: Some(codex_app_server_protocol::AuthMode::ApiKey),

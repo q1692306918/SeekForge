@@ -25,8 +25,8 @@ use codex_extension_api::empty_extension_registry;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider::create_model_provider;
+use codex_model_provider_info::DEEPSEEK_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_protocol::ThreadId;
@@ -361,7 +361,7 @@ impl ThreadManager {
             LocalThreadStoreConfig {
                 codex_home: codex_home.clone(),
                 sqlite_home: codex_home.clone(),
-                default_model_provider_id: OPENAI_PROVIDER_ID.to_string(),
+                default_model_provider_id: DEEPSEEK_PROVIDER_ID.to_string(),
             },
             state_db.clone(),
         ));

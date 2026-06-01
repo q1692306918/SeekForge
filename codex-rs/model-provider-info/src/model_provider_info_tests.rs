@@ -1,4 +1,5 @@
 use super::*;
+use codex_protocol::error::CodexErr;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use pretty_assertions::assert_eq;
@@ -117,6 +118,19 @@ wire_api = "chat"
 
     let err = toml::from_str::<ModelProviderInfo>(provider_toml).unwrap_err();
     assert!(err.to_string().contains(CHAT_WIRE_API_REMOVED_ERROR));
+}
+
+#[test]
+fn test_deserialize_chat_completions_wire_api() {
+    let provider_toml = r#"
+name = "DeepSeek"
+base_url = "https://api.deepseek.com"
+env_key = "DEEPSEEK_API_KEY"
+wire_api = "chat_completions"
+        "#;
+
+    let provider: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
+    assert_eq!(provider.wire_api.to_string(), "chat_completions");
 }
 
 #[test]
@@ -296,6 +310,55 @@ fn test_built_in_model_providers_include_amazon_bedrock() {
             .map(ModelProviderInfo::is_amazon_bedrock),
         Some(true)
     );
+}
+
+#[test]
+fn test_built_in_model_providers_include_deepseek() {
+    let providers = built_in_model_providers(/*openai_base_url*/ None);
+    let provider = providers
+        .get("deepseek")
+        .expect("DeepSeek provider should be built in");
+
+    assert_eq!(
+        provider,
+        &ModelProviderInfo {
+            name: "DeepSeek".to_string(),
+            base_url: Some("https://api.deepseek.com".to_string()),
+            env_key: Some("DEEPSEEK_API_KEY".to_string()),
+            env_key_instructions: Some(DEEPSEEK_ENV_KEY_INSTRUCTIONS.to_string()),
+            experimental_bearer_token: None,
+            auth: None,
+            aws: None,
+            wire_api: provider.wire_api,
+            query_params: None,
+            http_headers: None,
+            env_http_headers: None,
+            request_max_retries: Some(4),
+            stream_max_retries: Some(5),
+            stream_idle_timeout_ms: Some(300_000),
+            websocket_connect_timeout_ms: None,
+            requires_openai_auth: false,
+            supports_websockets: false,
+        }
+    );
+    assert_eq!(provider.wire_api.to_string(), "chat_completions");
+    assert!(!provider.supports_remote_compaction());
+}
+
+#[test]
+fn test_deepseek_missing_api_key_mentions_deepseek_setup() {
+    let provider = ModelProviderInfo::create_deepseek_provider();
+    let err = provider
+        .api_key()
+        .expect_err("missing DEEPSEEK_API_KEY should be reported");
+    let CodexErr::EnvVar(err) = err else {
+        panic!("expected EnvVar error");
+    };
+    let message = err.to_string();
+
+    assert!(message.contains("DEEPSEEK_API_KEY"));
+    assert!(message.contains("set DEEPSEEK_API_KEY=sk-..."));
+    assert!(!message.contains("codex login"));
 }
 
 #[test]
