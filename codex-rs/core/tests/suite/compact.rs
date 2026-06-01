@@ -36,10 +36,12 @@ use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use std::path::PathBuf;
 
+use core_test_support::responses::chat_completions_sse;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_completed_with_tokens;
 use core_test_support::responses::ev_function_call;
+use core_test_support::responses::mount_chat_completions_sse_sequence;
 use core_test_support::responses::mount_compact_json_once;
 use core_test_support::responses::mount_response_sequence;
 use core_test_support::responses::mount_sse_once;
@@ -263,6 +265,29 @@ fn non_openai_model_provider(server: &MockServer) -> ModelProviderInfo {
     provider.base_url = Some(format!("{}/v1", server.uri()));
     provider.supports_websockets = false;
     provider
+}
+
+fn deepseek_model_provider(server: &MockServer) -> ModelProviderInfo {
+    let mut provider = built_in_model_providers(/*openai_base_url*/ None)["deepseek"].clone();
+    provider.base_url = Some(format!("{}/v1", server.uri()));
+    provider.request_max_retries = Some(0);
+    provider.stream_max_retries = Some(0);
+    provider
+}
+
+fn chat_text_response(id: &str, text: &str, total_tokens: i64) -> String {
+    chat_completions_sse(vec![json!({
+        "id": id,
+        "choices": [{
+            "delta": {"content": text},
+            "finish_reason": "stop"
+        }],
+        "usage": {
+            "prompt_tokens": total_tokens,
+            "completion_tokens": 0,
+            "total_tokens": total_tokens
+        }
+    })])
 }
 
 fn model_info_with_context_window(slug: &str, context_window: i64) -> ModelInfo {
@@ -1697,6 +1722,125 @@ async fn auto_compact_runs_after_token_limit_hit() {
         user_texts
             .iter()
             .any(|text| text.contains(prefixed_auto_summary)),
+        "auto compact follow-up request should include the summary message"
+    );
+}
+
+#[cfg_attr(windows, tokio::test(flavor = "multi_thread", worker_threads = 4))]
+#[cfg_attr(not(windows), tokio::test(flavor = "multi_thread", worker_threads = 2))]
+async fn deepseek_auto_compact_runs_after_token_limit_hit() {
+    skip_if_no_network!();
+
+    let server = start_mock_server().await;
+    let request_log = mount_chat_completions_sse_sequence(
+        &server,
+        vec![
+            chat_text_response("chatcmpl-1", FIRST_REPLY, /*total_tokens*/ 70_000),
+            chat_text_response("chatcmpl-2", "SECOND_REPLY", /*total_tokens*/ 330_000),
+            chat_text_response("chatcmpl-3", AUTO_SUMMARY_TEXT, /*total_tokens*/ 200),
+            chat_text_response("chatcmpl-4", FINAL_REPLY, /*total_tokens*/ 120),
+        ],
+    )
+    .await;
+
+    let model_provider = deepseek_model_provider(&server);
+    let mut builder = test_codex().with_config(move |config| {
+        config.model_provider_id = "deepseek".to_string();
+        config.model_provider = model_provider;
+        config.model = Some("deepseek-v4-flash".to_string());
+        set_test_compact_prompt(config);
+        config.model_auto_compact_token_limit = Some(200_000);
+    });
+    let codex = builder.build(&server).await.unwrap().codex;
+
+    for user in [FIRST_AUTO_MSG, SECOND_AUTO_MSG, POST_AUTO_USER_MSG] {
+        codex
+            .submit(Op::UserInput {
+                environments: None,
+                items: vec![UserInput::Text {
+                    text: user.into(),
+                    text_elements: Vec::new(),
+                }],
+                final_output_json_schema: None,
+                responsesapi_client_metadata: None,
+                additional_context: Default::default(),
+                thread_settings: Default::default(),
+            })
+            .await
+            .unwrap();
+        wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    }
+
+    let requests = request_log.requests();
+    let request_bodies: Vec<Value> = requests
+        .iter()
+        .map(core_test_support::responses::ResponsesRequest::body_json)
+        .collect();
+    assert_eq!(
+        request_bodies.len(),
+        4,
+        "expected user turns, a compaction request, and the follow-up turn"
+    );
+    assert!(
+        request_bodies
+            .iter()
+            .all(|body| body.get("messages").and_then(Value::as_array).is_some()),
+        "DeepSeek requests should use chat messages"
+    );
+
+    let request_strings: Vec<String> = request_bodies.iter().map(Value::to_string).collect();
+    let auto_compact_index = request_strings
+        .iter()
+        .enumerate()
+        .find_map(|(idx, body)| body_contains_text(body, SUMMARIZATION_PROMPT).then_some(idx))
+        .expect("auto compact request missing");
+    assert_eq!(
+        auto_compact_index, 2,
+        "auto compact should add a third request"
+    );
+
+    let follow_up_index = request_strings
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(idx, body)| {
+            (body.contains(POST_AUTO_USER_MSG) && !body_contains_text(body, SUMMARIZATION_PROMPT))
+                .then_some(idx)
+        })
+        .expect("follow-up request missing");
+    assert_eq!(follow_up_index, 3, "follow-up request should be last");
+
+    let body_auto = &request_bodies[auto_compact_index];
+    assert_eq!(body_auto["model"].as_str(), Some("deepseek-v4-flash"));
+    let auto_messages = body_auto["messages"]
+        .as_array()
+        .expect("auto compact chat messages");
+    let last_auto = auto_messages
+        .last()
+        .expect("auto compact request should append a user message");
+    assert_eq!(last_auto["role"].as_str(), Some("user"));
+    assert_eq!(
+        last_auto["content"].as_str(),
+        Some(SUMMARIZATION_PROMPT),
+        "auto compact should send the summarization prompt as a user message",
+    );
+
+    let follow_up_body = &request_bodies[follow_up_index];
+    let follow_up_messages = follow_up_body["messages"]
+        .as_array()
+        .expect("follow-up chat messages");
+    let user_texts: Vec<&str> = follow_up_messages
+        .iter()
+        .filter(|message| message["role"].as_str() == Some("user"))
+        .filter_map(|message| message["content"].as_str())
+        .collect();
+    assert!(user_texts.iter().any(|text| *text == FIRST_AUTO_MSG));
+    assert!(user_texts.iter().any(|text| *text == SECOND_AUTO_MSG));
+    assert!(user_texts.iter().any(|text| *text == POST_AUTO_USER_MSG));
+    assert!(
+        user_texts
+            .iter()
+            .any(|text| text.contains(AUTO_SUMMARY_TEXT)),
         "auto compact follow-up request should include the summary message"
     );
 }

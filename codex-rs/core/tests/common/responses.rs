@@ -612,6 +612,16 @@ pub fn sse(events: Vec<Value>) -> String {
     out
 }
 
+pub fn chat_completions_sse(events: Vec<Value>) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for ev in events {
+        write!(&mut out, "data: {ev}\n\n").unwrap();
+    }
+    out.push_str("data: [DONE]\n\n");
+    out
+}
+
 pub fn sse_completed(id: &str) -> String {
     sse(vec![ev_response_created(id), ev_completed(id)])
 }
@@ -1012,6 +1022,23 @@ pub async fn mount_sse_once(server: &MockServer, body: String) -> ResponseMock {
 pub async fn mount_chat_completions_sse_once(server: &MockServer, body: String) -> ResponseMock {
     let (mock, response_mock) = chat_completions_mock();
     mock.respond_with(sse_response(body))
+        .up_to_n_times(1)
+        .mount(server)
+        .await;
+    response_mock
+}
+
+pub async fn mount_chat_completions_sse_once_match<M>(
+    server: &MockServer,
+    matcher: M,
+    body: String,
+) -> ResponseMock
+where
+    M: wiremock::Match + Send + Sync + 'static,
+{
+    let (mock, response_mock) = chat_completions_mock();
+    mock.and(matcher)
+        .respond_with(sse_response(body))
         .up_to_n_times(1)
         .mount(server)
         .await;
@@ -1479,6 +1506,48 @@ pub async fn mount_sse_sequence(server: &MockServer, bodies: Vec<String>) -> Res
     };
 
     let (mock, response_mock) = base_mock();
+    mock.respond_with(responder)
+        .up_to_n_times(num_calls as u64)
+        .expect(num_calls as u64)
+        .mount(server)
+        .await;
+
+    response_mock
+}
+
+/// Mounts a sequence of SSE response bodies and serves them in order for each
+/// POST to `/v1/chat/completions`.
+pub async fn mount_chat_completions_sse_sequence(
+    server: &MockServer,
+    bodies: Vec<String>,
+) -> ResponseMock {
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+
+    struct SeqResponder {
+        num_calls: AtomicUsize,
+        responses: Vec<String>,
+    }
+
+    impl Respond for SeqResponder {
+        fn respond(&self, _: &wiremock::Request) -> ResponseTemplate {
+            let call_num = self.num_calls.fetch_add(1, Ordering::SeqCst);
+            match self.responses.get(call_num) {
+                Some(body) => ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body.clone()),
+                None => panic!("no response for {call_num}"),
+            }
+        }
+    }
+
+    let num_calls = bodies.len();
+    let responder = SeqResponder {
+        num_calls: AtomicUsize::new(0),
+        responses: bodies,
+    };
+
+    let (mock, response_mock) = chat_completions_mock();
     mock.respond_with(responder)
         .up_to_n_times(num_calls as u64)
         .expect(num_calls as u64)

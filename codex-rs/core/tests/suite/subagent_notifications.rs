@@ -3,6 +3,8 @@ use codex_core::StartThreadOptions;
 use codex_core::ThreadConfigSnapshot;
 use codex_core::config::AgentRoleConfig;
 use codex_features::Feature;
+use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::built_in_model_providers;
 use codex_protocol::ThreadId;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -15,11 +17,13 @@ use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::user_input::UserInput;
 use core_test_support::hooks::trust_discovered_hooks;
 use core_test_support::responses::ResponsesRequest;
+use core_test_support::responses::chat_completions_sse;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call_with_namespace;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::ev_tool_search_call;
+use core_test_support::responses::mount_chat_completions_sse_once_match;
 use core_test_support::responses::mount_response_once_match;
 use core_test_support::responses::mount_sse_once_match;
 use core_test_support::responses::mount_sse_sequence;
@@ -105,6 +109,59 @@ fn role_block(description: &str, role_name: &str) -> Option<String> {
         block.push(line);
     }
     Some(block.join("\n"))
+}
+
+fn deepseek_model_provider(server: &MockServer) -> ModelProviderInfo {
+    let mut provider = built_in_model_providers(/*openai_base_url*/ None)["deepseek"].clone();
+    provider.base_url = Some(format!("{}/v1", server.uri()));
+    provider.request_max_retries = Some(0);
+    provider.stream_max_retries = Some(0);
+    provider
+}
+
+fn chat_text_response(id: &str, text: &str, total_tokens: i64) -> String {
+    chat_completions_sse(vec![json!({
+        "id": id,
+        "choices": [{
+            "delta": {"content": text},
+            "finish_reason": "stop"
+        }],
+        "usage": {
+            "prompt_tokens": total_tokens,
+            "completion_tokens": 0,
+            "total_tokens": total_tokens
+        }
+    })])
+}
+
+fn chat_tool_call_response(
+    id: &str,
+    call_id: &str,
+    chat_tool_name: &str,
+    arguments: &str,
+) -> String {
+    chat_completions_sse(vec![json!({
+        "id": id,
+        "choices": [{
+            "delta": {
+                "tool_calls": [{
+                    "index": 0,
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": chat_tool_name,
+                        "arguments": arguments
+                    }
+                }]
+            },
+            "finish_reason": "tool_calls"
+        }],
+        "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 0,
+            "total_tokens": 100
+        }
+    })])
 }
 
 fn write_home_skill(codex_home: &Path, dir: &str, name: &str, description: &str) -> Result<()> {
@@ -924,6 +981,87 @@ async fn spawned_child_receives_forked_parent_context() -> Result<()> {
     };
     assert!(body_contains(&child_request, TURN_0_FORK_PROMPT));
     assert!(!body_contains(&child_request, SPAWN_CALL_ID));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deepseek_spawned_child_receives_forked_parent_context() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+
+    let seed_turn = mount_chat_completions_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, TURN_0_FORK_PROMPT),
+        chat_text_response("chatcmpl-seed-1", "seeded", /*total_tokens*/ 100),
+    )
+    .await;
+
+    let spawn_args = serde_json::to_string(&json!({
+        "message": CHILD_PROMPT,
+        "fork_context": true,
+    }))?;
+    let spawn_turn = mount_chat_completions_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
+        chat_tool_call_response(
+            "chatcmpl-turn1-1",
+            SPAWN_CALL_ID,
+            "multi_agent_v1__spawn_agent",
+            &spawn_args,
+        ),
+    )
+    .await;
+
+    let child_request_log = mount_chat_completions_sse_once_match(
+        &server,
+        |req: &wiremock::Request| {
+            body_contains(req, CHILD_PROMPT) && !body_contains(req, SPAWN_CALL_ID)
+        },
+        chat_text_response("chatcmpl-child-1", "child done", /*total_tokens*/ 100),
+    )
+    .await;
+
+    let _turn1_followup = mount_chat_completions_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, SPAWN_CALL_ID),
+        chat_text_response("chatcmpl-turn1-2", "parent done", /*total_tokens*/ 100),
+    )
+    .await;
+
+    let model_provider = deepseek_model_provider(&server);
+    let mut builder = test_codex().with_config(move |config| {
+        config.model_provider_id = "deepseek".to_string();
+        config.model_provider = model_provider;
+        config.model = Some("deepseek-v4-flash".to_string());
+        config
+            .features
+            .enable(Feature::Collab)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    test.submit_turn(TURN_0_FORK_PROMPT).await?;
+    let seed_request = seed_turn.single_request();
+    assert_eq!(seed_request.path(), "/v1/chat/completions");
+
+    test.submit_turn(TURN_1_PROMPT).await?;
+    let spawn_request = spawn_turn.single_request();
+    assert_eq!(spawn_request.path(), "/v1/chat/completions");
+
+    let child_requests = wait_for_requests(&child_request_log).await?;
+    let child_request = child_requests
+        .last()
+        .expect("child request log should capture at least one request");
+    assert_eq!(child_request.path(), "/v1/chat/completions");
+    assert_eq!(
+        child_request.body_json()["model"].as_str(),
+        Some("deepseek-v4-flash")
+    );
+    assert!(child_request.body_contains_text(TURN_0_FORK_PROMPT));
+    assert!(child_request.body_contains_text(CHILD_PROMPT));
+    assert!(!child_request.body_contains_text(SPAWN_CALL_ID));
 
     Ok(())
 }
