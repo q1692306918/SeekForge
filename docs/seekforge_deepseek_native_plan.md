@@ -359,10 +359,10 @@ Current status:
 - Phase 2 is implemented as an opt-in planner pass before executor sampling:
   the planner uses a separate model session, receives no executor tools, and
   injects guidance only as an executor tail message for the current turn.
-- Phase 3 has initial TUI coverage: `/status` shows the DeepSeek planner state
-  for the `deepseek` provider, and `/planner [status|on|off]` lets users inspect
-  or persist the opt-in planner toggle. Richer lifecycle UI for active planner
-  requests remains planned.
+- Phase 3 has TUI coverage: `/status` shows the DeepSeek planner state for the
+  `deepseek` provider, `/planner [status|on|off]` lets users inspect or persist
+  the opt-in planner toggle, and live DeepSeek turns show the active planner
+  status until the executor begins streaming output or tool activity.
 
 ## 11. Compaction
 

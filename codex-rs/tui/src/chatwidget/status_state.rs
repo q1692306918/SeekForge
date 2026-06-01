@@ -110,6 +110,7 @@ pub(super) struct StatusState {
     pub(super) pending_guardian_review_status: PendingGuardianReviewStatus,
     pub(super) terminal_title_status_kind: TerminalTitleStatusKind,
     pub(super) retry_status_header: Option<String>,
+    pub(super) active_deepseek_planner_status_header: Option<String>,
     pub(super) pending_status_indicator_restore: bool,
 }
 
@@ -120,6 +121,7 @@ impl Default for StatusState {
             pending_guardian_review_status: PendingGuardianReviewStatus::default(),
             terminal_title_status_kind: TerminalTitleStatusKind::Working,
             retry_status_header: None,
+            active_deepseek_planner_status_header: None,
             pending_status_indicator_restore: false,
         }
     }

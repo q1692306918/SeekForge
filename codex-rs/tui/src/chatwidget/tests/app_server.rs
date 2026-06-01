@@ -1,6 +1,18 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
+fn set_deepseek_planner(chat: &mut ChatWidget, enabled: bool) {
+    chat.config.model_provider_id = "deepseek".to_string();
+    chat.set_deepseek_planner_enabled(enabled);
+}
+
+fn status_header(chat: &ChatWidget) -> &str {
+    chat.bottom_pane
+        .status_widget()
+        .expect("status indicator should be visible")
+        .header()
+}
+
 fn thread_settings_for_test(
     model: &str,
     thread_id: ThreadId,
@@ -363,6 +375,78 @@ async fn live_app_server_turn_completed_clears_working_status_after_answer_item(
 
     assert!(!chat.bottom_pane.is_task_running());
     assert!(chat.bottom_pane.status_widget().is_none());
+}
+
+#[tokio::test]
+async fn live_app_server_turn_started_shows_deepseek_planner_status() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    set_deepseek_planner(&mut chat, /*enabled*/ true);
+
+    handle_turn_started(&mut chat, "turn-1");
+
+    assert!(chat.bottom_pane.is_task_running());
+    assert_eq!(status_header(&chat), "Planning with deepseek-v4-pro");
+
+    handle_agent_message_delta(&mut chat, "hello");
+
+    assert_eq!(status_header(&chat), "Working");
+    assert_eq!(
+        chat.status_state.active_deepseek_planner_status_header,
+        None
+    );
+}
+
+#[tokio::test]
+async fn live_app_server_deepseek_planner_status_allows_reasoning_header_to_take_over() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    set_deepseek_planner(&mut chat, /*enabled*/ true);
+
+    handle_turn_started(&mut chat, "turn-1");
+    handle_agent_reasoning_delta(&mut chat, "**Inspecting context**");
+
+    assert_eq!(status_header(&chat), "Inspecting context");
+    assert_eq!(
+        chat.status_state.active_deepseek_planner_status_header,
+        None
+    );
+}
+
+#[tokio::test]
+async fn live_app_server_deepseek_planner_disabled_keeps_working_status() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    set_deepseek_planner(&mut chat, /*enabled*/ false);
+
+    handle_turn_started(&mut chat, "turn-1");
+
+    assert!(chat.bottom_pane.is_task_running());
+    assert_eq!(status_header(&chat), "Working");
+    assert_eq!(
+        chat.status_state.active_deepseek_planner_status_header,
+        None
+    );
+}
+
+#[tokio::test]
+async fn thread_snapshot_replay_suppresses_deepseek_planner_status() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    set_deepseek_planner(&mut chat, /*enabled*/ true);
+
+    chat.replay_thread_turns(
+        vec![app_server_turn(
+            "turn-1",
+            AppServerTurnStatus::InProgress,
+            /*duration_ms*/ None,
+            /*error*/ None,
+        )],
+        ReplayKind::ThreadSnapshot,
+    );
+
+    assert!(chat.bottom_pane.is_task_running());
+    assert_eq!(status_header(&chat), "Working");
+    assert_eq!(
+        chat.status_state.active_deepseek_planner_status_header,
+        None
+    );
 }
 
 #[tokio::test]

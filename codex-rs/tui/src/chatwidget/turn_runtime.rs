@@ -5,6 +5,12 @@
 
 use super::*;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeepSeekPlannerStatusVisibility {
+    Show,
+    Suppress,
+}
+
 impl ChatWidget {
     /// Synchronize the bottom-pane "task running" indicator with the current lifecycles.
     ///
@@ -47,6 +53,19 @@ impl ChatWidget {
     // Raw reasoning uses the same flow as summarized reasoning
 
     pub(super) fn on_task_started(&mut self) {
+        self.on_task_started_with_deepseek_planner_status(DeepSeekPlannerStatusVisibility::Show);
+    }
+
+    pub(super) fn on_replayed_task_started(&mut self) {
+        self.on_task_started_with_deepseek_planner_status(
+            DeepSeekPlannerStatusVisibility::Suppress,
+        );
+    }
+
+    fn on_task_started_with_deepseek_planner_status(
+        &mut self,
+        deepseek_planner_status_visibility: DeepSeekPlannerStatusVisibility,
+    ) {
         self.input_queue.user_turn_pending_start = false;
         self.turn_lifecycle.start(Instant::now());
         self.transcript.reset_turn_flags();
@@ -66,8 +85,22 @@ impl ChatWidget {
         self.bottom_pane
             .set_interrupt_hint_visible(/*visible*/ true);
         self.status_state.terminal_title_status_kind = TerminalTitleStatusKind::Working;
+        self.status_state.active_deepseek_planner_status_header = None;
         if self.mcp_startup_status.is_none() || !self.status_header_is_mcp_startup_owned() {
-            self.set_status_header(String::from("Working"));
+            if deepseek_planner_status_visibility == DeepSeekPlannerStatusVisibility::Show
+                && self.config.model_provider_id == codex_model_provider_info::DEEPSEEK_PROVIDER_ID
+                && self.config.deepseek_native.planner_enabled
+            {
+                let header = format!(
+                    "Planning with {}",
+                    self.config.deepseek_native.planner_model
+                );
+                self.status_state.terminal_title_status_kind = TerminalTitleStatusKind::Thinking;
+                self.status_state.active_deepseek_planner_status_header = Some(header.clone());
+                self.set_status_header(header);
+            } else {
+                self.set_status_header(String::from("Working"));
+            }
         }
         self.full_reasoning_buffer.clear();
         self.reasoning_buffer.clear();

@@ -25,6 +25,33 @@ impl ChatWidget {
         if !is_resume_initial_replay && !is_retry_error {
             self.restore_retry_status_header_if_present();
         }
+        let finishes_deepseek_planner_status = matches!(
+            &notification,
+            ServerNotification::ItemStarted(_)
+                | ServerNotification::ItemCompleted(_)
+                | ServerNotification::AgentMessageDelta(_)
+                | ServerNotification::PlanDelta(_)
+                | ServerNotification::ReasoningSummaryTextDelta(_)
+                | ServerNotification::ReasoningTextDelta(_)
+                | ServerNotification::ReasoningSummaryPartAdded(_)
+                | ServerNotification::TerminalInteraction(_)
+                | ServerNotification::CommandExecutionOutputDelta(_)
+                | ServerNotification::FileChangeOutputDelta(_)
+                | ServerNotification::TurnDiffUpdated(_)
+                | ServerNotification::TurnPlanUpdated(_)
+        );
+        if !from_replay
+            && finishes_deepseek_planner_status
+            && let Some(header) = self
+                .status_state
+                .active_deepseek_planner_status_header
+                .take()
+            && self.bottom_pane.is_task_running()
+            && self.status_state.current_status.header == header
+        {
+            self.status_state.terminal_title_status_kind = TerminalTitleStatusKind::Working;
+            self.set_status_header(String::from("Working"));
+        }
         match notification {
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
                 self.set_token_info(Some(token_usage_info_from_app_server(
@@ -57,8 +84,10 @@ impl ChatWidget {
             ServerNotification::TurnStarted(notification) => {
                 self.turn_lifecycle.last_turn_id = Some(notification.turn.id);
                 self.last_non_retry_error = None;
-                if !matches!(replay_kind, Some(ReplayKind::ResumeInitialMessages)) {
-                    self.on_task_started();
+                match replay_kind {
+                    None => self.on_task_started(),
+                    Some(ReplayKind::ThreadSnapshot) => self.on_replayed_task_started(),
+                    Some(ReplayKind::ResumeInitialMessages) => {}
                 }
             }
             ServerNotification::TurnCompleted(notification) => {
@@ -73,7 +102,9 @@ impl ChatWidget {
             ServerNotification::AgentMessageDelta(notification) => {
                 self.on_agent_message_delta(notification.delta);
             }
-            ServerNotification::PlanDelta(notification) => self.on_plan_delta(notification.delta),
+            ServerNotification::PlanDelta(notification) => {
+                self.on_plan_delta(notification.delta);
+            }
             ServerNotification::ReasoningSummaryTextDelta(notification) => {
                 self.on_agent_reasoning_delta(notification.delta);
             }
@@ -82,7 +113,9 @@ impl ChatWidget {
                     self.on_agent_reasoning_delta(notification.delta);
                 }
             }
-            ServerNotification::ReasoningSummaryPartAdded(_) => self.on_reasoning_section_break(),
+            ServerNotification::ReasoningSummaryPartAdded(_) => {
+                self.on_reasoning_section_break();
+            }
             ServerNotification::TerminalInteraction(notification) => {
                 self.on_terminal_interaction(notification.process_id, notification.stdin)
             }
