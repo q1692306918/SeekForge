@@ -3512,6 +3512,32 @@ mod tests {
     }
 
     #[test]
+    fn provider_reachability_uses_deepseek_endpoint_without_chatgpt() {
+        let plan = provider_reachability_plan_from_parts(
+            ProviderAuthReachabilityMode::NotRequired,
+            "deepseek",
+            "DeepSeek",
+            Some("https://api.deepseek.com"),
+            /*provider_query_params*/ None,
+            /*is_amazon_bedrock*/ false,
+            "https://chatgpt.com/backend-api/",
+        );
+
+        assert_eq!(
+            plan,
+            ReachabilityPlan {
+                description: "provider auth".to_string(),
+                endpoints: vec![ReachabilityEndpoint {
+                    label: "deepseek API".to_string(),
+                    url: "https://api.deepseek.com".to_string(),
+                    required: true,
+                    route_probe_url: Some("https://api.deepseek.com/models".to_string()),
+                }],
+            }
+        );
+    }
+
+    #[test]
     fn provider_reachability_adds_models_route_probe_for_openai_compatible_base_urls() {
         let query_params = HashMap::from([("api-version".to_string(), "2026-01-01".to_string())]);
 

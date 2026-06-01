@@ -492,6 +492,8 @@ Verification:
 
 - Starting with no auth but with `DEEPSEEK_API_KEY` does not show login.
 - Starting with no `DEEPSEEK_API_KEY` shows a DeepSeek-specific fix.
+- `codex doctor` reports the DeepSeek env key state and probes the DeepSeek API
+  endpoint rather than ChatGPT when the active provider is `deepseek`.
 - MCP OAuth login still works.
 
 ### Milestone D: Cache-First Behavior
@@ -680,7 +682,11 @@ Completed or partially completed:
   prints DeepSeek-native `DEEPSEEK_API_KEY` guidance and does not write
   `auth.json`.
 - README and first-run welcome copy now present SeekForge as a DeepSeek-native
-  Codex harness.
+  Codex harness. README includes an explicit DeepSeek `config.toml` sample with
+  the default provider, model, planner, retry, and auth settings.
+- `codex doctor` has DeepSeek-specific coverage for missing `DEEPSEEK_API_KEY`
+  remediation and provider reachability planning: the active `deepseek`
+  provider probes `https://api.deepseek.com` and `/models` instead of ChatGPT.
 
 Still planned:
 
