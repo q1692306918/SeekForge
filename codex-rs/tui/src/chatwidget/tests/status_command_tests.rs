@@ -79,6 +79,7 @@ async fn status_command_renders_immediately_without_rate_limit_refresh() {
 #[tokio::test]
 async fn status_command_uses_catalog_default_reasoning_when_config_empty() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_chatgpt_auth(&mut chat);
     chat.config.model_reasoning_effort = None;
 
     chat.dispatch_command(SlashCommand::Status);
@@ -92,6 +93,30 @@ async fn status_command_uses_catalog_default_reasoning_when_config_empty() {
     assert!(
         rendered.contains("gpt-5.4 (reasoning medium, summaries auto)"),
         "expected /status to render the catalog default reasoning effort, got: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn status_command_renders_deepseek_planner_state_for_deepseek_provider() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.model_provider_id = "deepseek".to_string();
+    chat.set_deepseek_planner_enabled(/*enabled*/ true);
+
+    chat.dispatch_command(SlashCommand::Status);
+
+    let rendered = match rx.try_recv() {
+        Ok(AppEvent::InsertHistoryCell(cell)) => {
+            lines_to_single_string(&cell.display_lines(/*width*/ 80))
+        }
+        other => panic!("expected status output, got {other:?}"),
+    };
+    assert!(
+        rendered.contains("DeepSeek planner"),
+        "expected /status to render DeepSeek planner label, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("enabled (deepseek-v4-pro)"),
+        "expected /status to render DeepSeek planner state, got: {rendered}"
     );
 }
 

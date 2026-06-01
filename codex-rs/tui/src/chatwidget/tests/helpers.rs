@@ -242,6 +242,11 @@ pub(super) fn assert_no_submit_op(op_rx: &mut tokio::sync::mpsc::UnboundedReceiv
 
 pub(crate) fn set_chatgpt_auth(chat: &mut ChatWidget) {
     chat.has_chatgpt_account = true;
+    chat.config.model_provider_id = codex_model_provider_info::OPENAI_PROVIDER_ID.to_string();
+    chat.config.model_provider =
+        codex_model_provider_info::built_in_model_providers(/*openai_base_url*/ None)
+            [codex_model_provider_info::OPENAI_PROVIDER_ID]
+            .clone();
     chat.model_catalog = test_model_catalog(&chat.config);
 }
 

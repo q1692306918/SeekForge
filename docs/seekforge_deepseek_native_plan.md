@@ -359,8 +359,10 @@ Current status:
 - Phase 2 is implemented as an opt-in planner pass before executor sampling:
   the planner uses a separate model session, receives no executor tools, and
   injects guidance only as an executor tail message for the current turn.
-- Phase 3 remains planned; TUI controls and visible planner lifecycle UI should
-  be added only after the non-interactive path stays stable.
+- Phase 3 has initial TUI coverage: `/status` shows the DeepSeek planner state
+  for the `deepseek` provider, and `/planner [status|on|off]` lets users inspect
+  or persist the opt-in planner toggle. Richer lifecycle UI for active planner
+  requests remains planned.
 
 ## 11. Compaction
 
@@ -678,6 +680,9 @@ Completed or partially completed:
   Focused coverage asserts planner/executor model separation, executor tool
   ownership, and that prior planner guidance does not persist into later
   planner or executor requests.
+- TUI `/status` now reports the DeepSeek planner state for the `deepseek`
+  provider, and `/planner [status|on|off]` persists the opt-in planner toggle
+  while refreshing the current session config.
 - `codex login` is no longer a native OpenAI/ChatGPT login path in this fork; it
   prints DeepSeek-native `DEEPSEEK_API_KEY` guidance and does not write
   `auth.json`.
@@ -690,9 +695,9 @@ Completed or partially completed:
 
 Still planned:
 
-- Planner/executor remains opt-in while prompt/cache behavior is observed; TUI
-  visibility and user controls are still planned before considering any default
-  enablement.
+- Planner/executor remains opt-in while prompt/cache behavior is observed.
+  Richer active-turn planner lifecycle UI is still planned before considering
+  any default enablement.
 - Full local CLI/TUI test verification on Windows currently depends on a usable
   `rusty_v8` artifact or a warmed cache; otherwise builds may fail before tests
   run while downloading or preparing `v8`.

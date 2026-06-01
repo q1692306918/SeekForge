@@ -175,6 +175,11 @@ impl ChatWidget {
         self.refresh_model_dependent_surfaces();
     }
 
+    pub(crate) fn set_deepseek_planner_enabled(&mut self, enabled: bool) {
+        self.config.deepseek_native.planner_enabled = enabled;
+        self.refresh_status_surfaces();
+    }
+
     /// Set the reasoning effort for the non-Plan collaboration mode.
     ///
     /// Does not touch the active Plan mask — Plan reasoning is controlled

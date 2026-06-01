@@ -1402,6 +1402,35 @@ impl App {
                     }
                 }
             }
+            AppEvent::UpdateDeepSeekPlannerEnabled(enabled) => {
+                let edit = crate::config_update::build_deepseek_planner_enabled_edit(enabled);
+                match crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    vec![edit],
+                )
+                .await
+                {
+                    Ok(_) => {
+                        self.config.deepseek_native.planner_enabled = enabled;
+                        self.chat_widget.set_deepseek_planner_enabled(enabled);
+                        self.chat_widget.submit_op(AppCommand::reload_user_config());
+                        let status = if enabled { "enabled" } else { "disabled" };
+                        self.chat_widget.add_info_message(
+                            format!("DeepSeek planner {status}"),
+                            /*hint*/ None,
+                        );
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            error = %err,
+                            "failed to persist DeepSeek planner setting"
+                        );
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save DeepSeek planner setting: {err}"
+                        ));
+                    }
+                }
+            }
             AppEvent::PersistRealtimeAudioDeviceSelection { kind, name } => {
                 let builder = match kind {
                     RealtimeAudioDeviceKind::Microphone => {

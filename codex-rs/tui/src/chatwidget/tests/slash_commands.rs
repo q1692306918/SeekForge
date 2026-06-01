@@ -2375,6 +2375,65 @@ async fn raw_slash_command_reports_usage_for_invalid_arg() {
 }
 
 #[tokio::test]
+async fn planner_slash_command_reports_status_and_toggles_enabled() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_deepseek_planner_enabled(/*enabled*/ true);
+
+    chat.dispatch_command(SlashCommand::Planner);
+
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("DeepSeek planner is enabled (deepseek-v4-pro)"),
+        "expected planner status, got {rendered:?}"
+    );
+    assert!(
+        rendered.contains("Usage: /planner [status|on|off]"),
+        "expected planner usage hint, got {rendered:?}"
+    );
+
+    chat.dispatch_command_with_args(SlashCommand::Planner, "off".to_string(), Vec::new());
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AppEvent::UpdateDeepSeekPlannerEnabled(false))),
+        "expected planner disable event, got {events:?}"
+    );
+
+    chat.dispatch_command_with_args(SlashCommand::Planner, "on".to_string(), Vec::new());
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AppEvent::UpdateDeepSeekPlannerEnabled(true))),
+        "expected planner enable event, got {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn planner_slash_command_reports_usage_for_invalid_arg() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Planner, "later".to_string(), Vec::new());
+
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("Usage: /planner [status|on|off]"),
+        "expected planner usage error, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
 async fn compact_queues_user_messages_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());

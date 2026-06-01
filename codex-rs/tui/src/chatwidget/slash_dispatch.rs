@@ -34,6 +34,7 @@ const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
     "Press Ctrl+C to return to the main thread first.";
 const GOAL_USAGE: &str = "Usage: /goal <objective>";
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
+const PLANNER_USAGE: &str = "Usage: /planner [status|on|off]";
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
 
 impl ChatWidget {
@@ -127,6 +128,21 @@ impl ChatWidget {
     fn emit_raw_output_mode_changed(&self, enabled: bool) {
         self.app_event_tx
             .send(AppEvent::RawOutputModeChanged { enabled });
+    }
+
+    fn add_deepseek_planner_status(&mut self) {
+        let status = if self.config.deepseek_native.planner_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        self.add_info_message(
+            format!(
+                "DeepSeek planner is {status} ({})",
+                self.config.deepseek_native.planner_model
+            ),
+            Some(PLANNER_USAGE.to_string()),
+        );
     }
 
     pub(super) fn dispatch_command(&mut self, cmd: SlashCommand) {
@@ -363,6 +379,9 @@ impl ChatWidget {
             SlashCommand::Raw => {
                 let enabled = self.toggle_raw_output_mode_and_notify();
                 self.emit_raw_output_mode_changed(enabled);
+            }
+            SlashCommand::Planner => {
+                self.add_deepseek_planner_status();
             }
             SlashCommand::Diff => {
                 self.add_diff_in_progress();
@@ -645,6 +664,22 @@ impl ChatWidget {
                     self.emit_raw_output_mode_changed(/*enabled*/ false);
                 }
                 _ => self.add_error_message(RAW_USAGE.to_string()),
+            },
+            SlashCommand::Planner => match trimmed.to_ascii_lowercase().as_str() {
+                "status" => self.add_deepseek_planner_status(),
+                "on" | "enable" | "enabled" => {
+                    self.app_event_tx
+                        .send(AppEvent::UpdateDeepSeekPlannerEnabled(
+                            /*enabled*/ true,
+                        ))
+                }
+                "off" | "disable" | "disabled" => {
+                    self.app_event_tx
+                        .send(AppEvent::UpdateDeepSeekPlannerEnabled(
+                            /*enabled*/ false,
+                        ))
+                }
+                _ => self.add_error_message(PLANNER_USAGE.to_string()),
             },
             SlashCommand::Rename if !trimmed.is_empty() => {
                 if !self.ensure_thread_rename_allowed() {
@@ -972,6 +1007,7 @@ impl ChatWidget {
             | SlashCommand::Rollout
             | SlashCommand::Copy
             | SlashCommand::Raw
+            | SlashCommand::Planner
             | SlashCommand::Vim
             | SlashCommand::Diff
             | SlashCommand::Rename

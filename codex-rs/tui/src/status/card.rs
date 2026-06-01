@@ -111,6 +111,7 @@ struct StatusHistoryCell {
     directory: PathBuf,
     permissions: String,
     agents_summary: Arc<RwLock<String>>,
+    deepseek_planner: Option<String>,
     collaboration_mode: Option<String>,
     model_provider: Option<String>,
     remote_connection: Option<RemoteConnectionStatus>,
@@ -321,6 +322,8 @@ impl StatusHistoryCell {
             workspace_root_suffix.as_deref(),
         );
         let model_provider = format_model_provider(config, runtime_model_provider_base_url);
+        let deepseek_planner =
+            (config.model_provider_id == "deepseek").then(|| format_deepseek_planner(config));
         let show_chatgpt_usage_link = config.model_provider.requires_openai_auth;
         let account = compose_account_display(account_display);
         let session_id = session_id.as_ref().map(std::string::ToString::to_string);
@@ -363,6 +366,7 @@ impl StatusHistoryCell {
                 permissions,
                 collaboration_mode: collaboration_mode.map(ToString::to_string),
                 model_provider,
+                deepseek_planner,
                 remote_connection: remote_connection.cloned(),
                 show_chatgpt_usage_link,
                 account,
@@ -768,6 +772,9 @@ impl HistoryCell for StatusHistoryCell {
         if self.model_provider.is_some() {
             push_label(&mut labels, &mut seen, "Model provider");
         }
+        if self.deepseek_planner.is_some() {
+            push_label(&mut labels, &mut seen, "DeepSeek planner");
+        }
         if account_value.is_some() {
             push_label(&mut labels, &mut seen, "Account");
         }
@@ -845,6 +852,12 @@ impl HistoryCell for StatusHistoryCell {
         lines.push(formatter.line("Model", model_spans));
         if let Some(model_provider) = self.model_provider.as_ref() {
             lines.push(formatter.line("Model provider", vec![Span::from(model_provider.clone())]));
+        }
+        if let Some(deepseek_planner) = self.deepseek_planner.as_ref() {
+            lines.push(formatter.line(
+                "DeepSeek planner",
+                vec![Span::from(deepseek_planner.clone())],
+            ));
         }
         lines.push(formatter.line("Directory", vec![Span::from(directory_value)]));
         lines.push(formatter.line("Permissions", vec![Span::from(self.permissions.clone())]));
@@ -949,6 +962,15 @@ fn format_model_provider(config: &Config, runtime_base_url: Option<&str>) -> Opt
         Some(base_url) => format!("{provider_name} - {base_url}"),
         None => provider_name.to_string(),
     })
+}
+
+fn format_deepseek_planner(config: &Config) -> String {
+    let status = if config.deepseek_native.planner_enabled {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    format!("{status} ({})", config.deepseek_native.planner_model)
 }
 
 fn sanitize_base_url(raw: &str) -> Option<String> {
