@@ -362,8 +362,83 @@ pub async fn run_login_with_device_code_fallback_to_browser(
     }
 }
 
+pub async fn run_login_guidance(
+    cli_config_overrides: CliConfigOverrides,
+    attempted_native_login: bool,
+) -> ! {
+    let config = load_config_or_exit(cli_config_overrides).await;
+    let provider = &config.model_provider;
+
+    if attempted_native_login {
+        eprintln!(
+            "SeekForge does not support native OpenAI/ChatGPT login or auth.json API-key login."
+        );
+    } else {
+        eprintln!("SeekForge does not use native OpenAI/ChatGPT login.");
+    }
+
+    eprintln!(
+        "Active model provider: {} ({})",
+        provider.name, config.model_provider_id
+    );
+    match provider.env_key.as_deref() {
+        Some(env_key) => {
+            let env_status = if std::env::var(env_key)
+                .ok()
+                .is_some_and(|value| !value.trim().is_empty())
+            {
+                "present"
+            } else {
+                "missing"
+            };
+            eprintln!("API key environment variable: {env_key} ({env_status})");
+            if let Some(instructions) = provider.env_key_instructions.as_deref() {
+                eprintln!("{instructions}");
+            } else {
+                eprintln!("Set {env_key}=sk-... before starting SeekForge.");
+            }
+        }
+        None => {
+            eprintln!(
+                "The active provider does not declare an API-key environment variable; configure provider auth in config.toml."
+            );
+        }
+    }
+    eprintln!("This command does not create or update auth.json.");
+
+    std::process::exit(if attempted_native_login { 1 } else { 0 });
+}
+
 pub async fn run_login_status(cli_config_overrides: CliConfigOverrides) -> ! {
     let config = load_config_or_exit(cli_config_overrides).await;
+
+    if !config.model_provider.requires_openai_auth {
+        eprintln!(
+            "Active model provider: {} ({})",
+            config.model_provider.name, config.model_provider_id
+        );
+        match config.model_provider.env_key.as_deref() {
+            Some(env_key) => {
+                if std::env::var(env_key)
+                    .ok()
+                    .is_some_and(|value| !value.trim().is_empty())
+                {
+                    eprintln!("Provider API key environment variable {env_key} is present");
+                    std::process::exit(0);
+                }
+
+                eprintln!("Provider API key environment variable {env_key} is missing");
+                if let Some(instructions) = config.model_provider.env_key_instructions.as_deref() {
+                    eprintln!("{instructions}");
+                }
+                std::process::exit(1);
+            }
+            None => {
+                eprintln!("The active provider does not use native OpenAI/ChatGPT login.");
+                std::process::exit(0);
+            }
+        }
+    }
 
     match CodexAuth::from_auth_storage(
         &config.codex_home,

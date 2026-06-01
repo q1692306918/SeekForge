@@ -7,6 +7,7 @@ use codex_api::SharedAuthProvider;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::WireApi;
 use codex_models_manager::manager::OpenAiModelsManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_models_manager::manager::StaticModelsManager;
@@ -177,6 +178,17 @@ impl ConfiguredModelProvider {
 impl ModelProvider for ConfiguredModelProvider {
     fn info(&self) -> &ModelProviderInfo {
         &self.info
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        match self.info.wire_api {
+            WireApi::Responses => ProviderCapabilities::default(),
+            WireApi::ChatCompletions => ProviderCapabilities {
+                namespace_tools: true,
+                image_generation: false,
+                web_search: false,
+            },
+        }
     }
 
     fn auth_manager(&self) -> Option<Arc<AuthManager>> {
@@ -359,6 +371,23 @@ mod tests {
         );
 
         assert_eq!(provider.capabilities(), ProviderCapabilities::default());
+    }
+
+    #[test]
+    fn chat_completions_provider_keeps_function_tools_but_disables_hosted_openai_tools() {
+        let provider = create_model_provider(
+            ModelProviderInfo::create_deepseek_provider(),
+            /*auth_manager*/ None,
+        );
+
+        assert_eq!(
+            provider.capabilities(),
+            ProviderCapabilities {
+                namespace_tools: true,
+                image_generation: false,
+                web_search: false,
+            }
+        );
     }
 
     #[test]

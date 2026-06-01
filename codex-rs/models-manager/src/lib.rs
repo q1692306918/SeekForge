@@ -90,7 +90,7 @@ fn deepseek_model(slug: &str, display_name: &str, description: &str, priority: i
         supports_image_detail_original: false,
         context_window: Some(128_000),
         max_context_window: Some(128_000),
-        auto_compact_token_limit: None,
+        auto_compact_token_limit: Some(115_200),
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
         input_modalities: vec![InputModality::Text],

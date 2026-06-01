@@ -948,6 +948,8 @@ fn bundled_models_default_to_deepseek_catalog() {
     assert_eq!(pro.visibility, ModelVisibility::List);
     assert_eq!(flash.context_window, Some(128_000));
     assert_eq!(pro.context_window, Some(128_000));
+    assert_eq!(flash.auto_compact_token_limit(), Some(115_200));
+    assert_eq!(pro.auto_compact_token_limit(), Some(115_200));
 }
 
 #[test]

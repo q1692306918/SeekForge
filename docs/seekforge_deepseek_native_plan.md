@@ -614,3 +614,49 @@ Start with the smallest runtime-relevant slice:
 
 This keeps the fork honest: defaults become DeepSeek-native only when the
 transport can actually run DeepSeek-shaped traffic.
+
+## 18. Current Implementation Snapshot
+
+As of 2026-06-01, the active branch has moved beyond the initial recommendation
+and contains the first SeekForge runtime slice:
+
+Completed or partially completed:
+
+- Repository shape is Codex-at-root, with `reasonix/` ignored as local reference
+  material only.
+- `origin` points at `https://github.com/q1692306918/SeekForge.git`, with
+  `upstream` retained for `https://github.com/openai/codex.git`.
+- Built-in provider `deepseek` exists with `DEEPSEEK_API_KEY`,
+  `https://api.deepseek.com`, `wire_api = "chat_completions"`, no OpenAI auth
+  requirement, and no websocket requirement.
+- Default model selection uses `deepseek-v4-flash`; review/planner defaults use
+  `deepseek-v4-pro`.
+- Static DeepSeek catalog entries exist, including 128k context and a 115,200
+  token auto-compact limit.
+- Chat Completions request serialization maps Codex messages/tools into
+  DeepSeek-compatible chat payloads, always serializes `content`, filters
+  outgoing `reasoning_content`, and sorts tool schemas for a stable prefix.
+- Chat Completions streaming parses text deltas, `reasoning_content`, streamed
+  tool-call deltas, cache hit/miss usage, nested cached-token usage, and
+  reasoning-token usage.
+- Chat Completions providers keep function/MCP-style tools enabled while
+  disabling OpenAI-hosted web search and image generation capabilities.
+- `codex login` is no longer a native OpenAI/ChatGPT login path in this fork; it
+  prints DeepSeek-native `DEEPSEEK_API_KEY` guidance and does not write
+  `auth.json`.
+- README and first-run welcome copy now present SeekForge as a DeepSeek-native
+  Codex harness.
+
+Still planned:
+
+- Planner/executor execution is still config-first; separate planner sessions
+  need an implementation pass before enabling it by default.
+- DeepSeek-specific TUI/exec cache usage surfacing should be audited end to
+  end, even though raw usage now maps into existing token usage structures.
+- Sub-agent isolation needs DeepSeek request snapshot tests rather than a new
+  architecture.
+- Compaction needs mock DeepSeek auto-compact coverage beyond the existing
+  provider gate and catalog limit.
+- Full local CLI/TUI test verification on Windows currently depends on a usable
+  `rusty_v8` artifact or a warmed cache; otherwise builds may fail before tests
+  run while downloading or preparing `v8`.

@@ -1,71 +1,45 @@
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
-<p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
-</p>
-</br>
-If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
-</br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
-</br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
+# SeekForge
 
----
+SeekForge is a DeepSeek-native fork of OpenAI Codex. The fork keeps Codex's
+agent harness strengths while replacing the default OpenAI/ChatGPT product path
+with a DeepSeek-first runtime.
+
+## Direction
+
+Keep:
+
+- MCP, plugins, skills, memory, sandbox, approvals, and TUI/exec flows.
+- Upstream-compatible Codex project layout.
+- TOML-based provider and model configuration.
+
+Change:
+
+- Default provider is `deepseek`.
+- Default executor model is `deepseek-v4-flash`.
+- Default review/planner model is `deepseek-v4-pro`.
+- Native OpenAI/ChatGPT login is not a SeekForge product capability.
 
 ## Quickstart
 
-### Installing and running Codex CLI
+Build and run from the repository root using the existing Codex workflow. During
+the transition the binary may still be named `codex`.
 
-Run the following on Mac or Linux to install Codex CLI:
-
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```powershell
+$env:DEEPSEEK_API_KEY = "sk-..."
+codex
 ```
 
-Run the following on Windows to install Codex CLI:
+or configure the same value in your shell profile before starting SeekForge.
 
-```
-powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
-```
+`codex login` is intentionally only a guidance command in this fork. It does not
+create `auth.json`; use `DEEPSEEK_API_KEY` or provider-specific TOML settings.
 
-Codex CLI can also be installed via the following package managers:
+## Repository Notes
 
-```shell
-# Install using npm
-npm install -g @openai/codex
-```
+- Codex source lives at the repository root.
+- `reasonix/` is ignored and used only as local reference material.
+- The full DeepSeek-native fork plan is in
+  [docs/seekforge_deepseek_native_plan.md](docs/seekforge_deepseek_native_plan.md).
+- The upstream project remains [openai/codex](https://github.com/openai/codex).
 
-```shell
-# Install using Homebrew
-brew install --cask codex
-```
-
-Then simply run `codex` to get started.
-
-<details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
-
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
-
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
-
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
-
-</details>
-
-### Using Codex with your ChatGPT plan
-
-Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your ChatGPT account to use Codex as part of your Plus, Pro, Business, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
-
-You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
-
-## Docs
-
-- [**Codex Documentation**](https://developers.openai.com/codex)
-- [**Contributing**](./docs/contributing.md)
-- [**Installing & building**](./docs/install.md)
-- [**Open source fund**](./docs/open-source-fund.md)
-
-This repository is licensed under the [Apache-2.0 License](LICENSE).
+This repository keeps the upstream [Apache-2.0 License](LICENSE).

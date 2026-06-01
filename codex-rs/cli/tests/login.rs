@@ -2,8 +2,6 @@ use std::path::Path;
 
 use anyhow::Result;
 use predicates::str::contains;
-use pretty_assertions::assert_eq;
-use serde_json::Value;
 use tempfile::TempDir;
 
 fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
@@ -20,38 +18,49 @@ fn write_file_auth_config(codex_home: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_auth_json(codex_home: &Path) -> Result<Value> {
-    let auth_json = std::fs::read_to_string(codex_home.join("auth.json"))?;
-    Ok(serde_json::from_str(&auth_json)?)
-}
-
 #[test]
-fn login_with_api_key_reads_stdin_and_writes_auth_json() -> Result<()> {
+fn login_prints_deepseek_auth_guidance_without_writing_auth_json() -> Result<()> {
     let codex_home = TempDir::new()?;
     write_file_auth_config(codex_home.path())?;
 
     let mut cmd = codex_command(codex_home.path())?;
-    cmd.args([
-        "-c",
-        "forced_login_method=\"api\"",
-        "login",
-        "--with-api-key",
-    ])
-    .write_stdin("sk-test\n")
-    .assert()
-    .success()
-    .stderr(contains("Successfully logged in"));
+    cmd.arg("login")
+        .assert()
+        .success()
+        .stderr(contains(
+            "SeekForge does not use native OpenAI/ChatGPT login",
+        ))
+        .stderr(contains("DEEPSEEK_API_KEY"))
+        .stderr(contains("This command does not create or update auth.json"));
 
-    let auth = read_auth_json(codex_home.path())?;
-    assert_eq!(auth["OPENAI_API_KEY"], "sk-test");
-    assert!(auth.get("tokens").is_none());
-    assert!(auth.get("agent_identity").is_none());
+    assert!(!codex_home.path().join("auth.json").exists());
 
     Ok(())
 }
 
 #[test]
-fn login_with_access_token_rejects_invalid_jwt() -> Result<()> {
+fn login_with_api_key_is_disabled_and_does_not_write_auth_json() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_file_auth_config(codex_home.path())?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["login", "--with-api-key"])
+        .write_stdin("sk-test\n")
+        .assert()
+        .failure()
+        .stderr(contains(
+            "SeekForge does not support native OpenAI/ChatGPT login or auth.json API-key login",
+        ))
+        .stderr(contains("DEEPSEEK_API_KEY"))
+        .stderr(contains("This command does not create or update auth.json"));
+
+    assert!(!codex_home.path().join("auth.json").exists());
+
+    Ok(())
+}
+
+#[test]
+fn login_with_access_token_is_disabled_before_jwt_validation() -> Result<()> {
     let codex_home = TempDir::new()?;
     write_file_auth_config(codex_home.path())?;
 
@@ -60,7 +69,29 @@ fn login_with_access_token_rejects_invalid_jwt() -> Result<()> {
         .write_stdin("not-a-jwt\n")
         .assert()
         .failure()
-        .stderr(contains("Error logging in with access token"));
+        .stderr(contains(
+            "SeekForge does not support native OpenAI/ChatGPT login or auth.json API-key login",
+        ));
+
+    assert!(!codex_home.path().join("auth.json").exists());
+
+    Ok(())
+}
+
+#[test]
+fn login_status_reports_deepseek_env_key() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_file_auth_config(codex_home.path())?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["login", "status"])
+        .env("DEEPSEEK_API_KEY", "sk-test")
+        .assert()
+        .success()
+        .stderr(contains("Active model provider: DeepSeek (deepseek)"))
+        .stderr(contains(
+            "Provider API key environment variable DEEPSEEK_API_KEY is present",
+        ));
 
     Ok(())
 }

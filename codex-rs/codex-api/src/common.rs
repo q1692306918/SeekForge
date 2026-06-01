@@ -310,15 +310,14 @@ pub struct ChatCompletionToolFunction {
 fn chat_tools_from_responses_tools(
     tools: &[Value],
 ) -> (Vec<ChatCompletionTool>, HashMap<String, ChatToolName>) {
-    let mut chat_tools = Vec::new();
-    let mut tool_names = HashMap::new();
+    let mut function_tools = Vec::new();
     for tool in tools {
         let Some(tool_type) = tool.get("type").and_then(Value::as_str) else {
             continue;
         };
         match tool_type {
             "function" => {
-                append_chat_function_tool(&mut chat_tools, &mut tool_names, None, None, tool);
+                append_chat_function_tool(&mut function_tools, None, None, tool);
             }
             "namespace" => {
                 let namespace = tool.get("name").and_then(Value::as_str);
@@ -326,8 +325,7 @@ fn chat_tools_from_responses_tools(
                 if let Some(namespace_tools) = tool.get("tools").and_then(Value::as_array) {
                     for namespace_tool in namespace_tools {
                         append_chat_function_tool(
-                            &mut chat_tools,
-                            &mut tool_names,
+                            &mut function_tools,
                             namespace,
                             namespace_description,
                             namespace_tool,
@@ -337,8 +335,7 @@ fn chat_tools_from_responses_tools(
             }
             "tool_search" => {
                 append_chat_function_tool(
-                    &mut chat_tools,
-                    &mut tool_names,
+                    &mut function_tools,
                     None,
                     None,
                     &json_like_tool_search(tool),
@@ -349,12 +346,29 @@ fn chat_tools_from_responses_tools(
         }
     }
 
+    function_tools.sort_by(|left, right| left.tool.function.name.cmp(&right.tool.function.name));
+
+    let mut chat_tools = Vec::with_capacity(function_tools.len());
+    let mut tool_names = HashMap::with_capacity(function_tools.len());
+    for function_tool in function_tools {
+        tool_names.insert(
+            function_tool.tool.function.name.clone(),
+            function_tool.tool_name,
+        );
+        chat_tools.push(function_tool.tool);
+    }
+
     (chat_tools, tool_names)
 }
 
+#[derive(Debug)]
+struct ChatFunctionTool {
+    tool_name: ChatToolName,
+    tool: ChatCompletionTool,
+}
+
 fn append_chat_function_tool(
-    chat_tools: &mut Vec<ChatCompletionTool>,
-    tool_names: &mut HashMap<String, ChatToolName>,
+    function_tools: &mut Vec<ChatFunctionTool>,
     namespace: Option<&str>,
     namespace_description: Option<&str>,
     tool: &Value,
@@ -372,19 +386,18 @@ fn append_chat_function_tool(
         .cloned()
         .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
 
-    tool_names.insert(
-        chat_name.clone(),
-        ChatToolName {
+    function_tools.push(ChatFunctionTool {
+        tool_name: ChatToolName {
             namespace: namespace.map(str::to_string),
             name: name.to_string(),
         },
-    );
-    chat_tools.push(ChatCompletionTool {
-        r#type: "function".to_string(),
-        function: ChatCompletionToolFunction {
-            name: chat_name,
-            description,
-            parameters,
+        tool: ChatCompletionTool {
+            r#type: "function".to_string(),
+            function: ChatCompletionToolFunction {
+                name: chat_name,
+                description,
+                parameters,
+            },
         },
     });
 }
@@ -803,6 +816,78 @@ mod chat_completions_tests {
                 .expect("second chat prefix messages should serialize");
 
         assert_eq!(first_prefix_messages, second_prefix_messages);
+    }
+
+    #[test]
+    fn chat_completions_request_sorts_tools_for_stable_prefix() {
+        let mut first = base_responses_request();
+        first.tools = vec![
+            json!({
+                "type": "namespace",
+                "name": "mcp__zeta__",
+                "description": "Zeta namespace.",
+                "tools": [{
+                    "type": "function",
+                    "name": "search",
+                    "description": "Search zeta.",
+                    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}
+                }]
+            }),
+            json!({
+                "type": "tool_search",
+                "description": "Find deferred tools.",
+                "parameters": {"type": "object", "properties": {"q": {"type": "string"}}}
+            }),
+            json!({
+                "type": "function",
+                "name": "alpha",
+                "description": "Alpha local tool.",
+                "parameters": {"type": "object", "properties": {}}
+            }),
+            json!({
+                "type": "namespace",
+                "name": "mcp__alpha__",
+                "description": "Alpha namespace.",
+                "tools": [{
+                    "type": "function",
+                    "name": "lookup",
+                    "description": "Look up alpha.",
+                    "parameters": {"type": "object", "properties": {"id": {"type": "string"}}}
+                }]
+            }),
+        ];
+
+        let mut second = base_responses_request();
+        second.tools = first.tools.iter().rev().cloned().collect();
+
+        let first_chat = ChatCompletionsApiRequest::from_responses_request(first);
+        let second_chat = ChatCompletionsApiRequest::from_responses_request(second);
+        let first_tools =
+            serde_json::to_vec(&first_chat.tools).expect("first tools should serialize");
+        let second_tools =
+            serde_json::to_vec(&second_chat.tools).expect("second tools should serialize");
+
+        assert_eq!(first_tools, second_tools);
+        assert_eq!(
+            first_chat
+                .tools
+                .iter()
+                .map(|tool| tool.function.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "alpha",
+                "mcp__alpha__lookup",
+                "mcp__zeta__search",
+                "tool_search",
+            ]
+        );
+        assert_eq!(
+            first_chat.tool_name_for_chat_name("mcp__alpha__lookup"),
+            Some(ChatToolName {
+                namespace: Some("mcp__alpha__".to_string()),
+                name: "lookup".to_string(),
+            })
+        );
     }
 
     #[tokio::test]

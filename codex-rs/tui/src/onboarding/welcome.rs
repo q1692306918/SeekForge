@@ -94,8 +94,8 @@ impl WidgetRef for &WelcomeWidget {
         lines.push(Line::from(vec![
             "  ".into(),
             "Welcome to ".into(),
-            "Codex".bold(),
-            ", OpenAI's command-line coding agent".into(),
+            "SeekForge".bold(),
+            ", a DeepSeek-native Codex harness".into(),
         ]));
 
         Paragraph::new(lines)
@@ -118,6 +118,7 @@ mod tests {
     use super::*;
     use crossterm::event::KeyCode;
     use crossterm::event::KeyModifiers;
+    use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
@@ -136,6 +137,33 @@ mod tests {
         })
     }
 
+    fn buffer_text(buf: &Buffer) -> String {
+        let mut text = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                text.push_str(buf[(x, y)].symbol());
+            }
+            text.push('\n');
+        }
+        text
+    }
+
+    #[test]
+    fn welcome_renders_seekforge_product_surface_snapshot() {
+        let widget = WelcomeWidget::new(
+            /*is_logged_in*/ false,
+            FrameRequester::test_dummy(),
+            /*animations_enabled*/ false,
+        );
+        let area = Rect::new(0, 0, 80, 3);
+        let mut buf = Buffer::empty(area);
+        (&widget).render(area, &mut buf);
+
+        assert_snapshot!(buffer_text(&buf).trim_end(), @r###"
+          Welcome to SeekForge, a DeepSeek-native Codex harness
+        "###);
+    }
+
     #[test]
     fn welcome_renders_animation_on_first_draw() {
         let widget = WelcomeWidget::new(
@@ -150,6 +178,9 @@ mod tests {
 
         let welcome_row = row_containing(&buf, "Welcome");
         assert_eq!(welcome_row, Some(frame_lines + 1));
+        let rendered = buffer_text(&buf);
+        assert!(rendered.contains("SeekForge"));
+        assert!(!rendered.contains("OpenAI"));
     }
 
     #[test]
