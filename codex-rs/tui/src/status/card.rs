@@ -66,7 +66,9 @@ struct StatusContextWindowData {
 pub(crate) struct StatusTokenUsageData {
     total: i64,
     input: i64,
+    cached_input: i64,
     output: i64,
+    reasoning_output: i64,
     context_window: Option<StatusContextWindowData>,
 }
 
@@ -337,7 +339,9 @@ impl StatusHistoryCell {
         let token_usage = StatusTokenUsageData {
             total: total_usage.blended_total(),
             input: total_usage.non_cached_input(),
+            cached_input: total_usage.cached_input(),
             output: total_usage.output_tokens,
+            reasoning_output: total_usage.reasoning_output_tokens,
             context_window,
         };
         let rate_limits = if rate_limits.len() <= 1 {
@@ -377,7 +381,6 @@ impl StatusHistoryCell {
         let total_fmt = format_tokens_compact(self.token_usage.total);
         let input_fmt = format_tokens_compact(self.token_usage.input);
         let output_fmt = format_tokens_compact(self.token_usage.output);
-
         vec![
             Span::from(total_fmt),
             Span::from(" total "),
@@ -389,6 +392,33 @@ impl StatusHistoryCell {
             Span::from(" output").dim(),
             Span::from(")").dim(),
         ]
+    }
+
+    fn token_usage_detail_spans(&self) -> Option<Vec<Span<'static>>> {
+        if self.token_usage.cached_input <= 0 && self.token_usage.reasoning_output <= 0 {
+            return None;
+        }
+
+        let input_fmt = format_tokens_compact(self.token_usage.input);
+        let cached_input_fmt = format_tokens_compact(self.token_usage.cached_input);
+        let reasoning_output_fmt = format_tokens_compact(self.token_usage.reasoning_output);
+        let mut spans = Vec::new();
+
+        if self.token_usage.cached_input > 0 {
+            spans.push(Span::from(input_fmt).dim());
+            spans.push(Span::from(" new input + ").dim());
+            spans.push(Span::from(cached_input_fmt).dim());
+            spans.push(Span::from(" cached input").dim());
+        }
+        if self.token_usage.reasoning_output > 0 {
+            if !spans.is_empty() {
+                spans.push(Span::from(", ").dim());
+            }
+            spans.push(Span::from(reasoning_output_fmt).dim());
+            spans.push(Span::from(" reasoning").dim());
+        }
+
+        Some(spans)
     }
 
     fn context_window_spans(&self) -> Option<Vec<Span<'static>>> {
@@ -754,6 +784,9 @@ impl HistoryCell for StatusHistoryCell {
             push_label(&mut labels, &mut seen, "Collaboration mode");
         }
         push_label(&mut labels, &mut seen, "Token usage");
+        if self.token_usage_detail_spans().is_some() {
+            push_label(&mut labels, &mut seen, "Token details");
+        }
         if self.token_usage.context_window.is_some() {
             push_label(&mut labels, &mut seen, "Context window");
         }
@@ -840,6 +873,9 @@ impl HistoryCell for StatusHistoryCell {
         // Hide token usage only for ChatGPT subscribers
         if !matches!(self.account, Some(StatusAccountDisplay::ChatGpt { .. })) {
             lines.push(formatter.line("Token usage", self.token_usage_spans()));
+            if let Some(spans) = self.token_usage_detail_spans() {
+                lines.push(formatter.line("Token details", spans));
+            }
         }
 
         if let Some(spans) = self.context_window_spans() {

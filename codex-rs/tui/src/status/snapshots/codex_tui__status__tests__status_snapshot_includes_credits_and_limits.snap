@@ -1,6 +1,6 @@
 ---
 source: tui/src/status/tests.rs
-assertion_line: 1523
+assertion_line: 1525
 expression: sanitized
 ---
 /status
@@ -15,6 +15,7 @@ expression: sanitized
 │  Agents.md:        <none>                                                   │
 │                                                                             │
 │  Token usage:      2K total  (1.4K input + 600 output)                      │
+│  Token details:    1.4K new input + 100 cached input                        │
 │  Context window:   100% left (2.2K used / 272K)                             │
 │  5h limit:         [███████████░░░░░░░░░] 55% left (resets 09:25)           │
 │  Weekly limit:     [██████████████░░░░░░] 70% left (resets 09:55)           │
