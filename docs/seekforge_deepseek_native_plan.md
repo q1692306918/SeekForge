@@ -352,6 +352,16 @@ Rollout:
 - Phase 2: non-interactive planner before complex tasks.
 - Phase 3: TUI visibility and user controls.
 
+Current status:
+
+- Phase 1 is implemented through `[deepseek_native] planner_model` and
+  `planner_enabled`.
+- Phase 2 is implemented as an opt-in planner pass before executor sampling:
+  the planner uses a separate model session, receives no executor tools, and
+  injects guidance only as an executor tail message for the current turn.
+- Phase 3 remains planned; TUI controls and visible planner lifecycle UI should
+  be added only after the non-interactive path stays stable.
+
 ## 11. Compaction
 
 Current Codex has local and remote compaction paths. Remote compaction is
@@ -659,6 +669,13 @@ Completed or partially completed:
 - DeepSeek Chat Completions request tests now cover automatic compaction after
   the configured token limit is crossed: the compact prompt is sent as the
   third chat request and the follow-up request carries the generated summary.
+- Optional DeepSeek planner/executor execution is implemented behind
+  `[deepseek_native].planner_enabled`: the planner defaults to
+  `deepseek-v4-pro`, runs in a separate no-tool model session, and injects
+  ephemeral `<deepseek_planner_guidance>` only into the executor request tail.
+  Focused coverage asserts planner/executor model separation, executor tool
+  ownership, and that prior planner guidance does not persist into later
+  planner or executor requests.
 - `codex login` is no longer a native OpenAI/ChatGPT login path in this fork; it
   prints DeepSeek-native `DEEPSEEK_API_KEY` guidance and does not write
   `auth.json`.
@@ -667,12 +684,13 @@ Completed or partially completed:
 
 Still planned:
 
-- Planner/executor execution is still config-first; separate planner sessions
-  need an implementation pass before enabling it by default.
+- Planner/executor remains opt-in while prompt/cache behavior is observed; TUI
+  visibility and user controls are still planned before considering any default
+  enablement.
 - Full local CLI/TUI test verification on Windows currently depends on a usable
   `rusty_v8` artifact or a warmed cache; otherwise builds may fail before tests
   run while downloading or preparing `v8`.
 - On this Windows machine, `just test -p codex-core deepseek_` passes when run
   with Git Bash on `PATH` and `just --shell E:/dev-env/git/bin/bash.exe
-  --shell-arg -lc`; this covers all five filtered tests and the nested
+  --shell-arg -lc`; this covers the filtered DeepSeek tests and the nested
   `bench-smoke` recipe.

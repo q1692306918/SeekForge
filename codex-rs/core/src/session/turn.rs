@@ -187,6 +187,46 @@ pub(crate) async fn run_turn(
             .await;
     }
 
+    let planner_guidance = if turn_context.config.deepseek_native.planner_enabled {
+        let planner_input = sess
+            .clone_history()
+            .await
+            .for_prompt(&turn_context.model_info.input_modalities);
+        match crate::session::planner::run_deepseek_planner(
+            Arc::clone(&sess),
+            Arc::clone(&turn_context),
+            planner_input,
+            cancellation_token.child_token(),
+        )
+        .await
+        {
+            Ok(planner_guidance) => planner_guidance,
+            Err(CodexErr::TurnAborted) => return None,
+            Err(err) => {
+                info!("Planner error: {err:#}");
+                let error = err.to_codex_protocol_error();
+                sess.emit_turn_error_lifecycle(turn_context.as_ref(), error.clone())
+                    .await;
+                if error == CodexErrorInfo::UsageLimitExceeded
+                    && let Err(err) = sess
+                        .goal_runtime_apply(GoalRuntimeEvent::UsageLimitReached {
+                            turn_context: turn_context.as_ref(),
+                        })
+                        .await
+                {
+                    warn!(
+                        "failed to usage-limit active goal after planner usage-limit error: {err}"
+                    );
+                }
+                sess.send_event(&turn_context, EventMsg::Error(err.to_error_event(None)))
+                    .await;
+                return None;
+            }
+        }
+    } else {
+        None
+    };
+
     track_turn_resolved_config_analytics(&sess, &turn_context, &input).await;
 
     let mut last_agent_message: Option<String> = None;
@@ -249,6 +289,7 @@ pub(crate) async fn run_turn(
             &mut client_session,
             turn_metadata_header.as_deref(),
             sampling_request_input.clone(),
+            planner_guidance.as_ref(),
             cancellation_token.child_token(),
         )
         .await
@@ -931,6 +972,7 @@ async fn run_sampling_request(
     client_session: &mut ModelClientSession,
     turn_metadata_header: Option<&str>,
     input: Vec<ResponseItem>,
+    planner_guidance: Option<&ResponseItem>,
     cancellation_token: CancellationToken,
 ) -> CodexResult<SamplingRequestResult> {
     let router = built_tools(sess.as_ref(), turn_context.as_ref(), &cancellation_token).await?;
@@ -953,13 +995,16 @@ async fn run_sampling_request(
     let mut retries = 0;
     let mut initial_input = Some(input);
     loop {
-        let prompt_input = if let Some(input) = initial_input.take() {
+        let mut prompt_input = if let Some(input) = initial_input.take() {
             input
         } else {
             sess.clone_history()
                 .await
                 .for_prompt(&turn_context.model_info.input_modalities)
         };
+        if let Some(planner_guidance) = planner_guidance {
+            prompt_input.push(planner_guidance.clone());
+        }
         let prompt = build_prompt(
             prompt_input,
             router.as_ref(),

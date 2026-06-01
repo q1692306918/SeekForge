@@ -1834,9 +1834,9 @@ async fn deepseek_auto_compact_runs_after_token_limit_hit() {
         .filter(|message| message["role"].as_str() == Some("user"))
         .filter_map(|message| message["content"].as_str())
         .collect();
-    assert!(user_texts.iter().any(|text| *text == FIRST_AUTO_MSG));
-    assert!(user_texts.iter().any(|text| *text == SECOND_AUTO_MSG));
-    assert!(user_texts.iter().any(|text| *text == POST_AUTO_USER_MSG));
+    assert!(user_texts.contains(&FIRST_AUTO_MSG));
+    assert!(user_texts.contains(&SECOND_AUTO_MSG));
+    assert!(user_texts.contains(&POST_AUTO_USER_MSG));
     assert!(
         user_texts
             .iter()

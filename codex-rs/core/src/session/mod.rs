@@ -200,6 +200,7 @@ mod inject;
 mod input_queue;
 mod mcp;
 mod multi_agents;
+mod planner;
 mod review;
 mod rollout_reconstruction;
 #[allow(clippy::module_inception)]

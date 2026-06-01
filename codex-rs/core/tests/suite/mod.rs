@@ -46,6 +46,7 @@ mod compact;
 mod compact_remote;
 mod compact_remote_parity;
 mod compact_resume_fork;
+mod deepseek_planner;
 mod deprecation_notice;
 mod exec;
 mod exec_policy;
