@@ -384,7 +384,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             eprintln!(
                 "{}\n{}",
                 "tokens used".style(self.dimmed),
-                format_with_separators(blended_total(usage))
+                token_usage(usage)
             );
         }
 
@@ -501,6 +501,39 @@ fn blended_total(usage: &ThreadTokenUsage) -> i64 {
     let cached_input = usage.total.cached_input_tokens.max(0);
     let non_cached_input = (usage.total.input_tokens - cached_input).max(0);
     (non_cached_input + usage.total.output_tokens.max(0)).max(0)
+}
+
+fn token_usage(usage: &ThreadTokenUsage) -> String {
+    let mut lines = vec![format_with_separators(blended_total(usage))];
+    if let Some(details) = token_usage_details(usage) {
+        lines.push(details);
+    }
+    lines.join("\n")
+}
+
+fn token_usage_details(usage: &ThreadTokenUsage) -> Option<String> {
+    let cached_input = usage.total.cached_input_tokens.max(0);
+    let reasoning_output = usage.total.reasoning_output_tokens.max(0);
+    if cached_input == 0 && reasoning_output == 0 {
+        return None;
+    }
+
+    let non_cached_input = (usage.total.input_tokens - cached_input).max(0);
+    let mut parts = Vec::new();
+    if cached_input > 0 {
+        parts.push(format!(
+            "{} new input + {} cached input",
+            format_with_separators(non_cached_input),
+            format_with_separators(cached_input)
+        ));
+    }
+    if reasoning_output > 0 {
+        parts.push(format!(
+            "{} reasoning",
+            format_with_separators(reasoning_output)
+        ));
+    }
+    Some(parts.join(", "))
 }
 
 fn should_print_final_message_to_stdout(

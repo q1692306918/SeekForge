@@ -644,6 +644,9 @@ Completed or partially completed:
 - TUI `/status` now surfaces DeepSeek cache-aware usage details as absolute
   cached/new input counts and reasoning output counts when those fields are
   available.
+- Non-interactive `codex exec` human output now keeps the existing blended total
+  while adding cached/new input and reasoning details when those usage fields
+  are available.
 - `codex login` is no longer a native OpenAI/ChatGPT login path in this fork; it
   prints DeepSeek-native `DEEPSEEK_API_KEY` guidance and does not write
   `auth.json`.
@@ -654,9 +657,10 @@ Still planned:
 
 - Planner/executor execution is still config-first; separate planner sessions
   need an implementation pass before enabling it by default.
-- DeepSeek-specific exec/app-server cache usage surfacing should be audited end
-  to end, even though raw usage now maps into existing token usage structures
-  and TUI `/status` now exposes cached/new/reasoning details.
+- DeepSeek-specific app-server cache usage surfacing should be audited end to
+  end, even though raw usage now maps into existing token usage structures and
+  both TUI `/status` and human `codex exec` output now expose
+  cached/new/reasoning details.
 - Sub-agent isolation needs DeepSeek request snapshot tests rather than a new
   architecture.
 - Compaction needs mock DeepSeek auto-compact coverage beyond the existing

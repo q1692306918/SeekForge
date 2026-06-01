@@ -1,5 +1,7 @@
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadTokenUsage;
+use codex_app_server_protocol::TokenUsageBreakdown;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnStatus;
 use codex_core::config::ConfigBuilder;
@@ -25,6 +27,7 @@ use super::final_message_from_turn_items;
 use super::reasoning_text;
 use super::should_print_final_message_to_stdout;
 use super::should_print_final_message_to_tty;
+use super::token_usage;
 use crate::event_processor::EventProcessor;
 
 #[test]
@@ -102,6 +105,19 @@ fn reasoning_text_uses_raw_content_when_enabled() {
     );
 
     assert_eq!(text.as_deref(), Some("raw"));
+}
+
+#[test]
+fn token_usage_keeps_single_line_when_no_cache_or_reasoning_tokens() {
+    assert_eq!(token_usage(&thread_token_usage(1_500, 0, 600, 0)), "2,100");
+}
+
+#[test]
+fn token_usage_includes_cache_and_reasoning_details() {
+    assert_eq!(
+        token_usage(&thread_token_usage(1_200, 200, 900, 150)),
+        "1,900\n1,000 new input + 200 cached input, 150 reasoning"
+    );
 }
 
 #[test]
@@ -468,6 +484,26 @@ fn turn_failed_clears_stale_final_message() {
     assert_eq!(processor.final_message, None);
     assert!(!processor.final_message_rendered);
     assert!(!processor.emit_final_message_on_shutdown);
+}
+
+fn thread_token_usage(
+    input_tokens: i64,
+    cached_input_tokens: i64,
+    output_tokens: i64,
+    reasoning_output_tokens: i64,
+) -> ThreadTokenUsage {
+    let total = TokenUsageBreakdown {
+        total_tokens: input_tokens + output_tokens,
+        input_tokens,
+        cached_input_tokens,
+        output_tokens,
+        reasoning_output_tokens,
+    };
+    ThreadTokenUsage {
+        total: total.clone(),
+        last: total,
+        model_context_window: None,
+    }
 }
 
 #[test]
