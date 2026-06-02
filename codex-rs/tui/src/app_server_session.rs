@@ -119,6 +119,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelAvailabilityNux;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelServiceTier;
+use codex_protocol::openai_models::ModelTokenPricing;
 use codex_protocol::openai_models::ModelUpgrade;
 use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -1242,6 +1243,16 @@ fn model_preset_from_api_model(model: ApiModel) -> ModelPreset {
             })
             .collect(),
         default_service_tier: model.default_service_tier,
+        pricing: model.pricing.map(|pricing| ModelTokenPricing {
+            currency: pricing.currency,
+            input_cache_hit_usd_micros_per_million_tokens: pricing
+                .input_cache_hit_usd_micros_per_million_tokens,
+            input_cache_miss_usd_micros_per_million_tokens: pricing
+                .input_cache_miss_usd_micros_per_million_tokens,
+            output_usd_micros_per_million_tokens: pricing.output_usd_micros_per_million_tokens,
+            reasoning_output_usd_micros_per_million_tokens: pricing
+                .reasoning_output_usd_micros_per_million_tokens,
+        }),
         is_default: model.is_default,
         upgrade,
         show_in_picker: !model.hidden,

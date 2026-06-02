@@ -9,6 +9,7 @@ use codex_login::ExternalAuth;
 use codex_login::ExternalAuthRefreshContext;
 use codex_login::ExternalAuthTokens;
 use codex_login::TokenData;
+use codex_protocol::openai_models::ModelTokenPricing;
 use codex_protocol::openai_models::ModelsResponse;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -946,10 +947,30 @@ fn bundled_models_default_to_deepseek_catalog() {
     assert_eq!(pro.display_name, "DeepSeek V4 Pro");
     assert_eq!(flash.visibility, ModelVisibility::List);
     assert_eq!(pro.visibility, ModelVisibility::List);
-    assert_eq!(flash.context_window, Some(128_000));
-    assert_eq!(pro.context_window, Some(128_000));
-    assert_eq!(flash.auto_compact_token_limit(), Some(115_200));
-    assert_eq!(pro.auto_compact_token_limit(), Some(115_200));
+    assert_eq!(flash.context_window, Some(1_000_000));
+    assert_eq!(pro.context_window, Some(1_000_000));
+    assert_eq!(flash.auto_compact_token_limit(), Some(900_000));
+    assert_eq!(pro.auto_compact_token_limit(), Some(900_000));
+    assert_eq!(
+        flash.pricing,
+        Some(ModelTokenPricing {
+            currency: "USD".to_string(),
+            input_cache_hit_usd_micros_per_million_tokens: Some(2_800),
+            input_cache_miss_usd_micros_per_million_tokens: Some(140_000),
+            output_usd_micros_per_million_tokens: Some(280_000),
+            reasoning_output_usd_micros_per_million_tokens: None,
+        })
+    );
+    assert_eq!(
+        pro.pricing,
+        Some(ModelTokenPricing {
+            currency: "USD".to_string(),
+            input_cache_hit_usd_micros_per_million_tokens: Some(3_625),
+            input_cache_miss_usd_micros_per_million_tokens: Some(435_000),
+            output_usd_micros_per_million_tokens: Some(870_000),
+            reasoning_output_usd_micros_per_million_tokens: None,
+        })
+    );
 }
 
 #[test]

@@ -79,6 +79,18 @@
         "model": {
           "type": "string"
         },
+        "pricing": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelTokenPricing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional provider pricing metadata."
+        },
         "serviceTiers": {
           "default": [],
           "items": {
@@ -152,6 +164,45 @@
         "description",
         "id",
         "name"
+      ],
+      "type": "object"
+    },
+    "ModelTokenPricing": {
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "inputCacheHitUsdMicrosPerMillionTokens": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "inputCacheMissUsdMicrosPerMillionTokens": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "outputUsdMicrosPerMillionTokens": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "reasoningOutputUsdMicrosPerMillionTokens": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "currency"
       ],
       "type": "object"
     },

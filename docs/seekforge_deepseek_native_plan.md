@@ -631,7 +631,7 @@ transport can actually run DeepSeek-shaped traffic.
 
 ## 18. Current Implementation Snapshot
 
-As of 2026-06-01, the active branch has moved beyond the initial recommendation
+As of 2026-06-02, the active branch has moved beyond the initial recommendation
 and contains the first SeekForge runtime slice:
 
 Completed or partially completed:
@@ -645,8 +645,11 @@ Completed or partially completed:
   requirement, and no websocket requirement.
 - Default model selection uses `deepseek-v4-flash`; review/planner defaults use
   `deepseek-v4-pro`.
-- Static DeepSeek catalog entries exist, including 128k context and a 115,200
+- Static DeepSeek catalog entries exist, including 1M context and a 900,000
   token auto-compact limit.
+- DeepSeek model metadata now carries cache-aware pricing for cache-hit input,
+  cache-miss input, and output tokens so later cost reporting can use the same
+  cached/new usage split already parsed from DeepSeek responses.
 - Chat Completions request serialization maps Codex messages/tools into
   DeepSeek-compatible chat payloads, always serializes `content`, filters
   outgoing `reasoning_content`, and sorts tool schemas for a stable prefix.
@@ -681,8 +684,9 @@ Completed or partially completed:
   ownership, and that prior planner guidance does not persist into later
   planner or executor requests.
 - TUI `/status` now reports the DeepSeek planner state for the `deepseek`
-  provider, and `/planner [status|on|off]` persists the opt-in planner toggle
-  while refreshing the current session config.
+  provider, `/planner [status|on|off]` persists the opt-in planner toggle while
+  refreshing the current session config, and live DeepSeek turns show the active
+  planner lifecycle status before executor activity takes over.
 - `codex login` is no longer a native OpenAI/ChatGPT login path in this fork; it
   prints DeepSeek-native `DEEPSEEK_API_KEY` guidance and does not write
   `auth.json`.
@@ -695,9 +699,8 @@ Completed or partially completed:
 
 Still planned:
 
-- Planner/executor remains opt-in while prompt/cache behavior is observed.
-  Richer active-turn planner lifecycle UI is still planned before considering
-  any default enablement.
+- Planner/executor remains opt-in while prompt/cache behavior is observed
+  before considering any default enablement.
 - Full local CLI/TUI test verification on Windows currently depends on a usable
   `rusty_v8` artifact or a warmed cache; otherwise builds may fail before tests
   run while downloading or preparing `v8`.

@@ -23,6 +23,7 @@ fn model_with_shell_type(shell_type: ConfigShellToolType) -> ModelInfo {
         additional_speed_tiers: Vec::new(),
         service_tiers: Vec::new(),
         default_service_tier: None,
+        pricing: None,
         availability_nux: None,
         upgrade: None,
         base_instructions: String::new(),

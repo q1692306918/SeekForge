@@ -242,6 +242,7 @@ export type { ModelProviderCapabilitiesReadResponse } from "./ModelProviderCapab
 export type { ModelRerouteReason } from "./ModelRerouteReason";
 export type { ModelReroutedNotification } from "./ModelReroutedNotification";
 export type { ModelServiceTier } from "./ModelServiceTier";
+export type { ModelTokenPricing } from "./ModelTokenPricing";
 export type { ModelUpgradeInfo } from "./ModelUpgradeInfo";
 export type { ModelVerification } from "./ModelVerification";
 export type { ModelVerificationNotification } from "./ModelVerificationNotification";

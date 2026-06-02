@@ -5,6 +5,7 @@ import type { InputModality } from "../InputModality";
 import type { ReasoningEffort } from "../ReasoningEffort";
 import type { ModelAvailabilityNux } from "./ModelAvailabilityNux";
 import type { ModelServiceTier } from "./ModelServiceTier";
+import type { ModelTokenPricing } from "./ModelTokenPricing";
 import type { ModelUpgradeInfo } from "./ModelUpgradeInfo";
 import type { ReasoningEffortOption } from "./ReasoningEffortOption";
 
@@ -16,4 +17,8 @@ additionalSpeedTiers: Array<string>, serviceTiers: Array<ModelServiceTier>,
 /**
  * Catalog default service tier id for this model, when one is configured.
  */
-defaultServiceTier: string | null, isDefault: boolean, };
+defaultServiceTier: string | null,
+/**
+ * Optional provider pricing metadata.
+ */
+pricing: ModelTokenPricing | null, isDefault: boolean, };

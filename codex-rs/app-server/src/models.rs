@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use codex_app_server_protocol::Model;
 use codex_app_server_protocol::ModelServiceTier;
+use codex_app_server_protocol::ModelTokenPricing;
 use codex_app_server_protocol::ModelUpgradeInfo;
 use codex_app_server_protocol::ReasoningEffortOption;
 use codex_core::ThreadManager;
@@ -54,6 +55,7 @@ fn model_from_preset(preset: ModelPreset) -> Model {
             })
             .collect(),
         default_service_tier: preset.default_service_tier,
+        pricing: preset.pricing.map(ModelTokenPricing::from),
         is_default: preset.is_default,
     }
 }

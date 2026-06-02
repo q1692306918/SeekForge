@@ -564,6 +564,7 @@ async fn remote_model_friendly_personality_instructions_with_feature() -> anyhow
         additional_speed_tiers: Vec::new(),
         service_tiers: Vec::new(),
         default_service_tier: None,
+        pricing: None,
         upgrade: None,
         base_instructions: "base instructions".to_string(),
         model_messages: Some(ModelMessages {
@@ -675,6 +676,7 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
         additional_speed_tiers: Vec::new(),
         service_tiers: Vec::new(),
         default_service_tier: None,
+        pricing: None,
         upgrade: None,
         base_instructions: "base instructions".to_string(),
         model_messages: Some(ModelMessages {

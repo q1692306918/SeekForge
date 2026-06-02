@@ -70,6 +70,7 @@ fn model_from_preset(preset: &ModelPreset) -> Model {
             })
             .collect(),
         default_service_tier: preset.default_service_tier.clone(),
+        pricing: preset.pricing.clone().map(Into::into),
         is_default: preset.is_default,
     }
 }

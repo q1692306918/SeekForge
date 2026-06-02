@@ -77,6 +77,7 @@ async fn models_client_hits_models_endpoint() {
             additional_speed_tiers: Vec::new(),
             service_tiers: Vec::new(),
             default_service_tier: None,
+            pricing: None,
             upgrade: None,
             base_instructions: "base instructions".to_string(),
             model_messages: None,

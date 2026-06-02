@@ -349,6 +349,7 @@ fn test_remote_model(slug: &str, priority: i32) -> ModelInfo {
         additional_speed_tiers: Vec::new(),
         service_tiers: Vec::new(),
         default_service_tier: None,
+        pricing: None,
         upgrade: None,
         base_instructions: "base instructions".to_string(),
         model_messages: None,

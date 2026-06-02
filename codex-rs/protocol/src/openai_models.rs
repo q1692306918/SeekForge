@@ -126,6 +126,28 @@ pub struct ModelServiceTier {
     pub description: String,
 }
 
+/// Provider pricing metadata, expressed as exact USD micros per 1M tokens.
+///
+/// Cached and fresh input prices are split because providers such as DeepSeek
+/// bill prompt-cache hits at a separate rate.
+#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
+pub struct ModelTokenPricing {
+    /// ISO 4217 currency for the listed prices.
+    pub currency: String,
+    /// Price for prompt tokens served from the provider's prompt/cache prefix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_cache_hit_usd_micros_per_million_tokens: Option<i64>,
+    /// Price for prompt tokens that miss the provider's prompt/cache prefix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_cache_miss_usd_micros_per_million_tokens: Option<i64>,
+    /// Price for output tokens when the provider publishes a single output rate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_usd_micros_per_million_tokens: Option<i64>,
+    /// Price for reasoning output only when billed separately from output tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_output_usd_micros_per_million_tokens: Option<i64>,
+}
+
 /// Metadata describing a Codex-supported model.
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq)]
 pub struct ModelPreset {
@@ -153,6 +175,9 @@ pub struct ModelPreset {
     /// Catalog default service tier id for this model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_service_tier: Option<String>,
+    /// Optional provider pricing metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pricing: Option<ModelTokenPricing>,
     /// Whether this is the default model for new users.
     pub is_default: bool,
     /// recommended upgrade model
@@ -297,6 +322,9 @@ pub struct ModelInfo {
     pub service_tiers: Vec<ModelServiceTier>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_service_tier: Option<String>,
+    /// Optional provider pricing metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pricing: Option<ModelTokenPricing>,
     pub availability_nux: Option<ModelAvailabilityNux>,
     pub upgrade: Option<ModelInfoUpgrade>,
     pub base_instructions: String,
@@ -489,6 +517,7 @@ impl From<ModelInfo> for ModelPreset {
             additional_speed_tiers: info.additional_speed_tiers,
             service_tiers: info.service_tiers,
             default_service_tier: info.default_service_tier,
+            pricing: info.pricing,
             is_default: false, // default is the highest priority available model
             upgrade: info.upgrade.as_ref().map(|upgrade| ModelUpgrade {
                 id: upgrade.model.clone(),
@@ -618,6 +647,7 @@ mod tests {
             additional_speed_tiers: Vec::new(),
             service_tiers: Vec::new(),
             default_service_tier: None,
+            pricing: None,
             availability_nux: None,
             upgrade: None,
             base_instructions: "base".to_string(),
@@ -922,12 +952,20 @@ mod tests {
 
     #[test]
     fn model_preset_preserves_availability_nux() {
+        let pricing = Some(ModelTokenPricing {
+            currency: "USD".to_string(),
+            input_cache_hit_usd_micros_per_million_tokens: Some(100),
+            input_cache_miss_usd_micros_per_million_tokens: Some(200),
+            output_usd_micros_per_million_tokens: Some(300),
+            reasoning_output_usd_micros_per_million_tokens: None,
+        });
         let preset = ModelPreset::from(ModelInfo {
             availability_nux: Some(ModelAvailabilityNux {
                 message: "Try Spark.".to_string(),
             }),
             additional_speed_tiers: vec![SPEED_TIER_FAST.to_string()],
             default_service_tier: Some(ServiceTier::Fast.request_value().to_string()),
+            pricing: pricing.clone(),
             service_tiers: Vec::new(),
             ..test_model(/*spec*/ None)
         });
@@ -943,6 +981,7 @@ mod tests {
             preset.default_service_tier,
             Some(ServiceTier::Fast.request_value().to_string())
         );
+        assert_eq!(preset.pricing, pricing);
     }
 
     #[test]

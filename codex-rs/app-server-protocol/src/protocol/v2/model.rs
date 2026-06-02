@@ -1,6 +1,7 @@
 use super::shared::v2_enum_from_core;
 use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ModelAvailabilityNux as CoreModelAvailabilityNux;
+use codex_protocol::openai_models::ModelTokenPricing as CoreModelTokenPricing;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::default_input_modalities;
 use codex_protocol::protocol::ModelRerouteReason as CoreModelRerouteReason;
@@ -75,6 +76,32 @@ pub struct ModelServiceTier {
     pub description: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ModelTokenPricing {
+    pub currency: String,
+    pub input_cache_hit_usd_micros_per_million_tokens: Option<i64>,
+    pub input_cache_miss_usd_micros_per_million_tokens: Option<i64>,
+    pub output_usd_micros_per_million_tokens: Option<i64>,
+    pub reasoning_output_usd_micros_per_million_tokens: Option<i64>,
+}
+
+impl From<CoreModelTokenPricing> for ModelTokenPricing {
+    fn from(value: CoreModelTokenPricing) -> Self {
+        Self {
+            currency: value.currency,
+            input_cache_hit_usd_micros_per_million_tokens: value
+                .input_cache_hit_usd_micros_per_million_tokens,
+            input_cache_miss_usd_micros_per_million_tokens: value
+                .input_cache_miss_usd_micros_per_million_tokens,
+            output_usd_micros_per_million_tokens: value.output_usd_micros_per_million_tokens,
+            reasoning_output_usd_micros_per_million_tokens: value
+                .reasoning_output_usd_micros_per_million_tokens,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -101,6 +128,9 @@ pub struct Model {
     /// Catalog default service tier id for this model, when one is configured.
     #[serde(default)]
     pub default_service_tier: Option<String>,
+    /// Optional provider pricing metadata.
+    #[serde(default)]
+    pub pricing: Option<ModelTokenPricing>,
     // Only one model should be marked as default.
     pub is_default: bool,
 }
