@@ -717,13 +717,18 @@ Completed or partially completed:
   collaboration-mode/developer updates map to a DeepSeek-compatible `system`
   tail message, while previously serialized prefix messages and tool schema
   bytes remain unchanged.
+- `codex-api` now has DeepSeek mid-session memory/context update prefix
+  coverage: model-visible memory updates stay as appended user-role tail
+  messages, while previously serialized prefix messages and tool schema bytes
+  remain unchanged for the active session.
+- `codex-api` now has DeepSeek compaction-boundary prefix coverage: compaction
+  replacement history drops old prompt bytes from outgoing chat requests, then
+  subsequent post-compaction turns reuse the new summarized prefix bytes.
 
 Still planned:
 
 - Planner/executor remains opt-in while prompt/cache behavior is observed
   before considering any default enablement.
-- Remaining Milestone D prefix-stability coverage still needs to pin
-  mid-session memory updates and compaction cache collapse/recovery.
 - Full local CLI/TUI test verification on Windows currently depends on a usable
   `rusty_v8` artifact or a warmed cache; otherwise builds may fail before tests
   run while downloading or preparing `v8`.

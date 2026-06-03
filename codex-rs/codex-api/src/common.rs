@@ -900,6 +900,160 @@ mod chat_completions_tests {
     }
 
     #[test]
+    fn chat_completions_request_keeps_mid_session_memory_update_in_tail() {
+        let mut first = base_responses_request();
+        first.input = vec![
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "first stable user turn".to_string(),
+                }],
+                phase: None,
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "assistant".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "first stable assistant turn".to_string(),
+                }],
+                phase: None,
+            },
+        ];
+        first.tools = vec![json!({
+            "type": "function",
+            "name": "alpha",
+            "description": "Alpha local tool.",
+            "parameters": {"type": "object", "properties": {}}
+        })];
+
+        let mut second = first.clone();
+        second.input.push(ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "<external_memory>Keep future replies concise.</external_memory>".to_string(),
+            }],
+            phase: None,
+        });
+        second.input.push(ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "memory-aware user tail".to_string(),
+            }],
+            phase: None,
+        });
+
+        let first_chat = ChatCompletionsApiRequest::from_responses_request(first);
+        let second_chat = ChatCompletionsApiRequest::from_responses_request(second);
+        let first_prefix_messages =
+            serde_json::to_vec(&first_chat.messages).expect("first chat messages should serialize");
+        let second_prefix_messages =
+            serde_json::to_vec(&second_chat.messages[..first_chat.messages.len()])
+                .expect("second chat prefix messages should serialize");
+        let first_tools =
+            serde_json::to_vec(&first_chat.tools).expect("first tools should serialize");
+        let second_tools =
+            serde_json::to_vec(&second_chat.tools).expect("second tools should serialize");
+
+        assert_eq!(first_prefix_messages, second_prefix_messages);
+        assert_eq!(first_tools, second_tools);
+        assert_eq!(second_chat.messages[3].role, "user");
+        assert_eq!(
+            second_chat.messages[3].content,
+            "<external_memory>Keep future replies concise.</external_memory>"
+        );
+        assert_eq!(second_chat.messages[4].role, "user");
+    }
+
+    #[test]
+    fn chat_completions_request_collapses_and_recovers_prefix_after_compaction() {
+        let mut pre_compact = base_responses_request();
+        pre_compact.input = vec![
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "old stable user turn".to_string(),
+                }],
+                phase: None,
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "assistant".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "old stable assistant turn".to_string(),
+                }],
+                phase: None,
+            },
+        ];
+
+        let mut post_compact = base_responses_request();
+        post_compact.input = vec![
+            ResponseItem::ContextCompaction {
+                encrypted_content: Some("encrypted replacement history".to_string()),
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "summary of old stable user and assistant turns".to_string(),
+                }],
+                phase: None,
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "post-compact user tail".to_string(),
+                }],
+                phase: None,
+            },
+        ];
+
+        let mut followup = post_compact.clone();
+        followup.input.push(ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "post-compact assistant answer".to_string(),
+            }],
+            phase: None,
+        });
+        followup.input.push(ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "second post-compact user tail".to_string(),
+            }],
+            phase: None,
+        });
+
+        let pre_chat = ChatCompletionsApiRequest::from_responses_request(pre_compact);
+        let post_chat = ChatCompletionsApiRequest::from_responses_request(post_compact);
+        let followup_chat = ChatCompletionsApiRequest::from_responses_request(followup);
+        let pre_prefix_messages =
+            serde_json::to_vec(&pre_chat.messages).expect("pre compact messages should serialize");
+        let post_prefix_same_len =
+            serde_json::to_vec(&post_chat.messages[..pre_chat.messages.len()])
+                .expect("post compact prefix should serialize");
+        let post_prefix_messages = serde_json::to_vec(&post_chat.messages)
+            .expect("post compact messages should serialize");
+        let followup_prefix_messages =
+            serde_json::to_vec(&followup_chat.messages[..post_chat.messages.len()])
+                .expect("followup compact prefix should serialize");
+        let post_serialized =
+            serde_json::to_string(&post_chat).expect("post compact request should serialize");
+
+        assert_ne!(pre_prefix_messages, post_prefix_same_len);
+        assert_eq!(post_prefix_messages, followup_prefix_messages);
+        assert!(post_serialized.contains("summary of old stable user and assistant turns"));
+        assert!(!post_serialized.contains("old stable assistant turn"));
+        assert!(!post_serialized.contains("encrypted replacement history"));
+    }
+
+    #[test]
     fn chat_completions_request_sorts_tools_for_stable_prefix() {
         let mut first = base_responses_request();
         first.tools = vec![
