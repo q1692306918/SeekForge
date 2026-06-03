@@ -89,6 +89,11 @@ use thread_inventory::thread_inventory_check;
 use title::terminal_title_check;
 use updates::updates_check;
 
+const SEEKFORGE_PROVIDER_AUTH_REMEDIATION: &str = concat!(
+    "SeekForge does not support native OpenAI/ChatGPT login or auth.json API-key login. ",
+    "Configure the active provider auth through an environment variable or provider-specific TOML settings.",
+);
+
 const OPENAI_BETA_HEADER: &str = "OpenAI-Beta";
 const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
 const WEBSOCKET_IMMEDIATE_CLOSE_GRACE: Duration = Duration::from_millis(250);
@@ -1149,6 +1154,13 @@ fn config_toml_details(config: &Config, details: &mut Vec<String>) {
 }
 
 fn auth_check(config: &Config) -> DoctorCheck {
+    auth_check_with_env(config, env_var_present)
+}
+
+fn auth_check_with_env(
+    config: &Config,
+    env_var_present: impl Fn(&str) -> bool + Copy,
+) -> DoctorCheck {
     let mut details = Vec::new();
     let auth_path = config.codex_home.join("auth.json");
     details.push(format!(
@@ -1216,8 +1228,7 @@ fn auth_check(config: &Config) -> DoctorCheck {
             let mut check =
                 DoctorCheck::new("auth.credentials", "auth", status, summary).details(details);
             if status == CheckStatus::Fail {
-                check =
-                    check.remediation("Run codex login again or provide a supported auth env var.");
+                check = check.remediation(SEEKFORGE_PROVIDER_AUTH_REMEDIATION);
             }
             check
         }
@@ -1235,7 +1246,7 @@ fn auth_check(config: &Config) -> DoctorCheck {
             "no Codex credentials were found",
         )
         .details(details)
-        .remediation("Run codex login or provide an API key through a supported auth env var."),
+        .remediation(SEEKFORGE_PROVIDER_AUTH_REMEDIATION),
         Err(err) => DoctorCheck::new(
             "auth.credentials",
             "auth",
@@ -1243,7 +1254,9 @@ fn auth_check(config: &Config) -> DoctorCheck {
             "stored credentials could not be read",
         )
         .detail(err.to_string())
-        .remediation("Fix auth storage access or run codex login again."),
+        .remediation(
+            "Fix auth storage access, or configure the active provider auth through an environment variable or provider-specific TOML settings.",
+        ),
     }
 }
 
@@ -3421,6 +3434,26 @@ mod tests {
                 .as_deref()
                 .is_none_or(|remediation| !remediation.contains("codex login"))
         );
+    }
+
+    #[tokio::test]
+    async fn generic_auth_failure_uses_seekforge_provider_auth_remediation() {
+        let codex_home = tempfile::tempdir().expect("tempdir");
+        let mut config = ConfigBuilder::default()
+            .codex_home(codex_home.path().to_path_buf())
+            .build()
+            .await
+            .expect("config should load");
+        config.model_provider.requires_openai_auth = true;
+        config.model_provider.env_key = None;
+
+        let check = auth_check_with_env(&config, |_| false);
+
+        assert_eq!(check.status, CheckStatus::Fail);
+        assert_eq!(check.summary, "no Codex credentials were found");
+        let remediation = check.remediation.as_deref().expect("remediation");
+        assert!(remediation.contains("SeekForge does not support native OpenAI/ChatGPT login"));
+        assert!(!remediation.contains("codex login"));
     }
 
     #[test]

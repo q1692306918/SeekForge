@@ -720,6 +720,9 @@ Completed or partially completed:
 - `codex doctor` has DeepSeek-specific coverage for missing `DEEPSEEK_API_KEY`
   remediation and provider reachability planning: the active `deepseek`
   provider probes `https://api.deepseek.com` and `/models` instead of ChatGPT.
+- `codex doctor` generic auth failures no longer direct users back to
+  `codex login`; the remediation now follows SeekForge's DeepSeek-native auth
+  boundary and points to provider env/TOML configuration instead.
 - `codex-core-skills` now has cache-boundary coverage for skill rendering: a
   loader/render test proves the stable available-skills index contains
   frontmatter metadata and the `SKILL.md` path while keeping the full skill body
@@ -758,6 +761,9 @@ Still planned:
   `deepseek_manual_compact_uses_chat_completions_and_carries_summary` test also
   fails before executing tests for the same `v8` symlink privilege issue, even
   when rerun through the available escalation path.
+- On this Windows machine, the focused `codex-cli`
+  `generic_auth_failure_uses_seekforge_provider_auth_remediation` test also
+  fails before executing tests for the same `v8` symlink privilege issue.
 - On this Windows machine, `just test -p codex-core deepseek_` passes when run
   with Git Bash on `PATH` and `just --shell E:/dev-env/git/bin/bash.exe
   --shell-arg -lc`; this covers the filtered DeepSeek tests and the nested
