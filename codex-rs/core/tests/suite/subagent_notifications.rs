@@ -52,6 +52,9 @@ const TURN_0_FORK_PROMPT: &str = "seed fork context";
 const TURN_1_PROMPT: &str = "spawn a child and continue";
 const TURN_2_NO_WAIT_PROMPT: &str = "follow up without wait";
 const CHILD_PROMPT: &str = "child: do work";
+const CHILD_PRIVATE_COMMAND: &str = "echo child_private_tool_output";
+const CHILD_PRIVATE_TOOL_OUTPUT: &str = "child_private_tool_output";
+const CHILD_FINAL_ANSWER: &str = "child final answer from child-only.rs:12";
 const INHERITED_MODEL: &str = "gpt-5.3-codex";
 const INHERITED_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::XHigh;
 const REQUESTED_MODEL: &str = "gpt-5.4";
@@ -162,6 +165,16 @@ fn chat_tool_call_response(
             "total_tokens": 100
         }
     })])
+}
+
+fn chat_shell_command_response(id: &str, call_id: &str, command: &str) -> Result<String> {
+    let arguments = serde_json::to_string(&json!({ "command": command }))?;
+    Ok(chat_tool_call_response(
+        id,
+        call_id,
+        "shell_command",
+        &arguments,
+    ))
 }
 
 fn write_home_skill(codex_home: &Path, dir: &str, name: &str, description: &str) -> Result<()> {
@@ -1019,11 +1032,26 @@ async fn deepseek_spawned_child_receives_forked_parent_context() -> Result<()> {
         |req: &wiremock::Request| {
             body_contains(req, CHILD_PROMPT) && !body_contains(req, SPAWN_CALL_ID)
         },
-        chat_text_response("chatcmpl-child-1", "child done", /*total_tokens*/ 100),
+        chat_shell_command_response(
+            "chatcmpl-child-1",
+            "child-shell-call-1",
+            CHILD_PRIVATE_COMMAND,
+        )?,
     )
     .await;
 
-    let _turn1_followup = mount_chat_completions_sse_once_match(
+    let child_followup_log = mount_chat_completions_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, CHILD_PRIVATE_TOOL_OUTPUT),
+        chat_text_response(
+            "chatcmpl-child-2",
+            CHILD_FINAL_ANSWER,
+            /*total_tokens*/ 100,
+        ),
+    )
+    .await;
+
+    let turn1_followup = mount_chat_completions_sse_once_match(
         &server,
         |req: &wiremock::Request| body_contains(req, SPAWN_CALL_ID),
         chat_text_response("chatcmpl-turn1-2", "parent done", /*total_tokens*/ 100),
@@ -1062,6 +1090,19 @@ async fn deepseek_spawned_child_receives_forked_parent_context() -> Result<()> {
     assert!(child_request.body_contains_text(TURN_0_FORK_PROMPT));
     assert!(child_request.body_contains_text(CHILD_PROMPT));
     assert!(!child_request.body_contains_text(SPAWN_CALL_ID));
+
+    let child_followup_requests = wait_for_requests(&child_followup_log).await?;
+    let child_followup = child_followup_requests
+        .last()
+        .expect("child follow-up request log should capture at least one request");
+    assert!(child_followup.body_contains_text(CHILD_PRIVATE_COMMAND));
+    assert!(child_followup.body_contains_text(CHILD_PRIVATE_TOOL_OUTPUT));
+
+    let parent_followup = turn1_followup.single_request();
+    assert_eq!(parent_followup.path(), "/v1/chat/completions");
+    assert_eq!(parent_followup.header("x-openai-subagent"), None);
+    assert!(!parent_followup.body_contains_text(CHILD_PRIVATE_COMMAND));
+    assert!(!parent_followup.body_contains_text(CHILD_PRIVATE_TOOL_OUTPUT));
 
     Ok(())
 }

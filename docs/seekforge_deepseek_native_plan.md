@@ -681,6 +681,10 @@ Completed or partially completed:
   isolation: the child request uses `/v1/chat/completions`, preserves the
   seeded parent context and child prompt, and does not inherit the parent
   `spawn_agent` call id.
+- DeepSeek Chat Completions request tests now cover child tool-traffic
+  isolation: a spawned child can issue its own `shell_command` call and receive
+  the tool result in its follow-up request, while the parent follow-up DeepSeek
+  request excludes that child-private command and output.
 - DeepSeek Chat Completions request tests now cover automatic compaction after
   the configured token limit is crossed: the compact prompt is sent as the
   third chat request and the follow-up request carries the generated summary.
