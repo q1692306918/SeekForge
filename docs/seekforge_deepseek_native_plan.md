@@ -658,8 +658,9 @@ Completed or partially completed:
   split across new input, cached input, output, and reasoning output when the
   active model preset publishes pricing.
 - Chat Completions request serialization maps Codex messages/tools into
-  DeepSeek-compatible chat payloads, always serializes `content`, filters
-  outgoing `reasoning_content`, and sorts tool schemas for a stable prefix.
+  DeepSeek-compatible chat payloads, maps Codex `developer` messages to
+  DeepSeek `system` messages, always serializes `content`, filters outgoing
+  `reasoning_content`, and sorts tool schemas for a stable prefix.
 - Chat Completions streaming parses text deltas, `reasoning_content`, streamed
   tool-call deltas, cache hit/miss usage, nested cached-token usage, and
   reasoning-token usage.
@@ -712,13 +713,17 @@ Completed or partially completed:
   loader/render test proves the stable available-skills index contains
   frontmatter metadata and the `SKILL.md` path while keeping the full skill body
   out of the prefix until the skill is explicitly selected.
+- `codex-api` now has DeepSeek plan-mode prefix coverage: appended
+  collaboration-mode/developer updates map to a DeepSeek-compatible `system`
+  tail message, while previously serialized prefix messages and tool schema
+  bytes remain unchanged.
 
 Still planned:
 
 - Planner/executor remains opt-in while prompt/cache behavior is observed
   before considering any default enablement.
-- Remaining Milestone D prefix-stability coverage still needs to pin plan-mode
-  toggles, mid-session memory updates, and compaction cache collapse/recovery.
+- Remaining Milestone D prefix-stability coverage still needs to pin
+  mid-session memory updates and compaction cache collapse/recovery.
 - Full local CLI/TUI test verification on Windows currently depends on a usable
   `rusty_v8` artifact or a warmed cache; otherwise builds may fail before tests
   run while downloading or preparing `v8`.

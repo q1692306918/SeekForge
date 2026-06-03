@@ -438,7 +438,7 @@ fn append_chat_messages_for_response_item(
     match item {
         ResponseItem::Message { role, content, .. } => {
             messages.push(ChatCompletionMessage::text(
-                role,
+                chat_role_for_response_role(&role),
                 content_items_to_chat_text(&content),
             ));
         }
@@ -506,6 +506,13 @@ fn append_chat_messages_for_response_item(
         | ResponseItem::CompactionTrigger
         | ResponseItem::ContextCompaction { .. }
         | ResponseItem::Other => {}
+    }
+}
+
+fn chat_role_for_response_role(role: &str) -> &str {
+    match role {
+        "developer" => "system",
+        _ => role,
     }
 }
 
@@ -816,6 +823,80 @@ mod chat_completions_tests {
                 .expect("second chat prefix messages should serialize");
 
         assert_eq!(first_prefix_messages, second_prefix_messages);
+    }
+
+    #[test]
+    fn chat_completions_request_maps_plan_updates_to_system_tail_without_mutating_prefix() {
+        let mut first = base_responses_request();
+        first.input = vec![
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "first stable user turn".to_string(),
+                }],
+                phase: None,
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "assistant".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "first stable assistant turn".to_string(),
+                }],
+                phase: None,
+            },
+        ];
+        first.tools = vec![json!({
+            "type": "function",
+            "name": "alpha",
+            "description": "Alpha local tool.",
+            "parameters": {"type": "object", "properties": {}}
+        })];
+
+        let mut second = first.clone();
+        second.input.push(ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "<collaboration_mode>Plan mode instructions.</collaboration_mode>"
+                    .to_string(),
+            }],
+            phase: None,
+        });
+        second.input.push(ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "plan-mode user tail".to_string(),
+            }],
+            phase: None,
+        });
+
+        let first_chat = ChatCompletionsApiRequest::from_responses_request(first);
+        let second_chat = ChatCompletionsApiRequest::from_responses_request(second);
+        let first_prefix_messages =
+            serde_json::to_vec(&first_chat.messages).expect("first chat messages should serialize");
+        let second_prefix_messages =
+            serde_json::to_vec(&second_chat.messages[..first_chat.messages.len()])
+                .expect("second chat prefix messages should serialize");
+        let first_tools =
+            serde_json::to_vec(&first_chat.tools).expect("first tools should serialize");
+        let second_tools =
+            serde_json::to_vec(&second_chat.tools).expect("second tools should serialize");
+
+        assert_eq!(first_prefix_messages, second_prefix_messages);
+        assert_eq!(first_tools, second_tools);
+        assert_eq!(second_chat.messages[3].role, "system");
+        assert_eq!(
+            second_chat.messages[3].content,
+            "<collaboration_mode>Plan mode instructions.</collaboration_mode>"
+        );
+        assert_eq!(second_chat.messages[4].role, "user");
+        assert!(
+            !serde_json::to_string(&second_chat)
+                .expect("second chat request should serialize")
+                .contains("\"role\":\"developer\"")
+        );
     }
 
     #[test]
