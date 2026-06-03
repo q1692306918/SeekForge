@@ -1,4 +1,8 @@
 use super::*;
+use crate::render::SkillMetadataBudget;
+use crate::render::SkillRenderSideEffects;
+use crate::render::build_available_skills;
+use crate::render::render_available_skills_body;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::ConfigLayerEntry;
 use codex_config::ConfigLayerStack;
@@ -1220,6 +1224,58 @@ async fn loads_valid_skill() {
             plugin_id: None,
         }]
     );
+}
+
+#[tokio::test]
+async fn available_skill_index_keeps_full_skill_body_lazy() {
+    let codex_home = tempfile::tempdir().expect("tempdir");
+    let body_sentinel = "DEEPSEEK_PREFIX_CACHE_BODY_SENTINEL";
+    let skill_dir = codex_home.path().join("skills").join("cache-aware");
+    fs::create_dir_all(&skill_dir).expect("create skill dir");
+    let skill_path = skill_dir.join(SKILLS_FILENAME);
+    fs::write(
+        &skill_path,
+        format!(
+            "---\nname: cache-aware\ndescription: stable metadata only\n---\n\n# Runtime playbook\n{body_sentinel}\n"
+        ),
+    )
+    .expect("write skill");
+    let cfg = make_config(&codex_home).await;
+
+    let outcome = load_skills_for_test(&cfg).await;
+    assert!(
+        outcome.errors.is_empty(),
+        "unexpected errors: {:?}",
+        outcome.errors
+    );
+    assert_eq!(
+        outcome.skills,
+        vec![SkillMetadata {
+            name: "cache-aware".to_string(),
+            description: "stable metadata only".to_string(),
+            short_description: None,
+            interface: None,
+            dependencies: None,
+            policy: None,
+            path_to_skills_md: normalized(&skill_path),
+            scope: SkillScope::User,
+            plugin_id: None,
+        }]
+    );
+
+    let available = build_available_skills(
+        &outcome,
+        SkillMetadataBudget::Characters(usize::MAX),
+        SkillRenderSideEffects::None,
+    )
+    .expect("available skills should render");
+    let rendered_index =
+        render_available_skills_body(&available.skill_root_lines, &available.skill_lines);
+
+    assert!(rendered_index.contains("cache-aware"));
+    assert!(rendered_index.contains("stable metadata only"));
+    assert!(rendered_index.contains("SKILL.md"));
+    assert!(!rendered_index.contains(body_sentinel));
 }
 
 #[tokio::test]

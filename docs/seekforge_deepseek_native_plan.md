@@ -512,6 +512,9 @@ Verification:
 Verification:
 
 - Snapshot tests show deterministic prefix bytes.
+- Skill index rendering keeps full `SKILL.md` bodies lazy: model-visible
+  available-skills metadata includes names/descriptions/paths but not full
+  playbooks unless a skill is selected for the user-turn tail.
 - Cache metrics are parsed from mock usage payloads.
 - Toggling plan mode does not change system instructions or tool schema bytes.
 - Adding memory mid-session does not mutate the prefix for the active session.
@@ -633,7 +636,7 @@ transport can actually run DeepSeek-shaped traffic.
 
 ## 18. Current Implementation Snapshot
 
-As of 2026-06-02, the active branch has moved beyond the initial recommendation
+As of 2026-06-03, the active branch has moved beyond the initial recommendation
 and contains the first SeekForge runtime slice:
 
 Completed or partially completed:
@@ -705,11 +708,17 @@ Completed or partially completed:
 - `codex doctor` has DeepSeek-specific coverage for missing `DEEPSEEK_API_KEY`
   remediation and provider reachability planning: the active `deepseek`
   provider probes `https://api.deepseek.com` and `/models` instead of ChatGPT.
+- `codex-core-skills` now has cache-boundary coverage for skill rendering: a
+  loader/render test proves the stable available-skills index contains
+  frontmatter metadata and the `SKILL.md` path while keeping the full skill body
+  out of the prefix until the skill is explicitly selected.
 
 Still planned:
 
 - Planner/executor remains opt-in while prompt/cache behavior is observed
   before considering any default enablement.
+- Remaining Milestone D prefix-stability coverage still needs to pin plan-mode
+  toggles, mid-session memory updates, and compaction cache collapse/recovery.
 - Full local CLI/TUI test verification on Windows currently depends on a usable
   `rusty_v8` artifact or a warmed cache; otherwise builds may fail before tests
   run while downloading or preparing `v8`.
