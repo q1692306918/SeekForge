@@ -723,6 +723,13 @@ Completed or partially completed:
 - `codex doctor` generic auth failures no longer direct users back to
   `codex login`; the remediation now follows SeekForge's DeepSeek-native auth
   boundary and points to provider env/TOML configuration instead.
+- TUI onboarding no longer surfaces native OpenAI/ChatGPT login even if a
+  provider still advertises `requires_openai_auth`; directory trust onboarding
+  remains intact so sandbox/approval safety UX is preserved.
+- Remote exec-server registration no longer falls back to ChatGPT auth,
+  `auth.json` API-key auth, or `CODEX_API_KEY`; the only retained remote
+  registration auth path is explicit Agent Identity via
+  `--use-agent-identity-auth` and `CODEX_ACCESS_TOKEN`.
 - `codex-core-skills` now has cache-boundary coverage for skill rendering: a
   loader/render test proves the stable available-skills index contains
   frontmatter metadata and the `SKILL.md` path while keeping the full skill body
@@ -764,6 +771,15 @@ Still planned:
 - On this Windows machine, the focused `codex-cli`
   `generic_auth_failure_uses_seekforge_provider_auth_remediation` test also
   fails before executing tests for the same `v8` symlink privilege issue.
+- On this Windows machine, focused validation for the TUI native-login
+  onboarding and CLI remote exec-server auth changes was attempted with
+  `just --shell E:/dev-env/git/bin/bash.exe --shell-arg -lc test -p codex-cli
+  exec_server_remote_default_auth_rejects_native_login` and the matching
+  `codex-tui onboarding_skips_native_login_but_keeps_trust_prompt` filter; both
+  failed before executing tests because `rusty_v8` could not create its
+  `target/debug/gn_root` symlink without the required Windows privilege. The
+  same result was reproduced after retrying the focused filters through the
+  available escalation path.
 - On this Windows machine, `just test -p codex-core deepseek_` passes when run
   with Git Bash on `PATH` and `just --shell E:/dev-env/git/bin/bash.exe
   --shell-arg -lc`; this covers the filtered DeepSeek tests and the nested

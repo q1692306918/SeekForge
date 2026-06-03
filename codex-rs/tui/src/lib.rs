@@ -1960,14 +1960,8 @@ fn should_show_onboarding(
     should_show_login_screen(login_status, config)
 }
 
-fn should_show_login_screen(login_status: LoginStatus, config: &Config) -> bool {
-    // Only show the login screen for providers that actually require OpenAI auth
-    // (OpenAI or equivalents). For OSS/other providers, skip login entirely.
-    if !config.model_provider.requires_openai_auth {
-        return false;
-    }
-
-    login_status == LoginStatus::NotAuthenticated
+fn should_show_login_screen(_login_status: LoginStatus, _config: &Config) -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -2003,6 +1997,30 @@ mod tests {
         remove_legacy_tui_log_file(temp_dir.path());
 
         assert!(!legacy_log.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn onboarding_skips_native_login_but_keeps_trust_prompt() -> std::io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let mut config = build_config(&temp_dir).await?;
+        config.model_provider.requires_openai_auth = true;
+
+        assert!(!should_show_login_screen(
+            LoginStatus::NotAuthenticated,
+            &config
+        ));
+        assert!(!should_show_onboarding(
+            LoginStatus::NotAuthenticated,
+            &config,
+            /*show_trust_screen*/ false,
+        ));
+        assert!(should_show_onboarding(
+            LoginStatus::NotAuthenticated,
+            &config,
+            /*show_trust_screen*/ true,
+        ));
+
         Ok(())
     }
 
