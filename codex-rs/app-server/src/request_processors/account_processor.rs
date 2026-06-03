@@ -5,6 +5,7 @@ const LOGIN_CHATGPT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 // The override is intentionally available only in debug builds, matching the login path below.
 #[cfg(debug_assertions)]
 const LOGIN_ISSUER_OVERRIDE_ENV_VAR: &str = "CODEX_APP_SERVER_LOGIN_ISSUER";
+const SEEKFORGE_NATIVE_LOGIN_DISABLED_MESSAGE: &str = "SeekForge does not support native OpenAI/ChatGPT login or auth.json API-key login. Set DEEPSEEK_API_KEY in your environment instead.";
 
 enum ActiveLogin {
     Browser {
@@ -212,31 +213,16 @@ impl AccountRequestProcessor {
         params: LoginAccountParams,
     ) -> Result<(), JSONRPCErrorError> {
         match params {
-            LoginAccountParams::ApiKey { api_key } => {
-                self.login_api_key_v2(request_id, LoginApiKeyParams { api_key })
+            LoginAccountParams::ApiKey { .. }
+            | LoginAccountParams::Chatgpt { .. }
+            | LoginAccountParams::ChatgptDeviceCode
+            | LoginAccountParams::ChatgptAuthTokens { .. } => {
+                self.outgoing
+                    .send_result(
+                        request_id,
+                        Err(invalid_request(SEEKFORGE_NATIVE_LOGIN_DISABLED_MESSAGE)),
+                    )
                     .await;
-            }
-            LoginAccountParams::Chatgpt {
-                codex_streamlined_login,
-            } => {
-                self.login_chatgpt_v2(request_id, codex_streamlined_login)
-                    .await;
-            }
-            LoginAccountParams::ChatgptDeviceCode => {
-                self.login_chatgpt_device_code_v2(request_id).await;
-            }
-            LoginAccountParams::ChatgptAuthTokens {
-                access_token,
-                chatgpt_account_id,
-                chatgpt_plan_type,
-            } => {
-                self.login_chatgpt_auth_tokens(
-                    request_id,
-                    access_token,
-                    chatgpt_account_id,
-                    chatgpt_plan_type,
-                )
-                .await;
             }
         }
         Ok(())

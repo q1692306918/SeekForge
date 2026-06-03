@@ -707,6 +707,13 @@ Completed or partially completed:
 - `codex login` is no longer a native OpenAI/ChatGPT login path in this fork; it
   prints DeepSeek-native `DEEPSEEK_API_KEY` guidance and does not write
   `auth.json`.
+- App-server v2 `account/login/start` now rejects native OpenAI/ChatGPT
+  API-key, browser, device-code, and ChatGPT auth-token login attempts with the
+  same DeepSeek-native `DEEPSEEK_API_KEY` guidance, while preserving existing
+  file-backed auth reads/refreshes for compatibility tests and runtime
+  migration edges.
+- MCP OAuth is intentionally untouched; this fork disables the Codex account
+  product login surface, not MCP server authentication.
 - README and first-run welcome copy now present SeekForge as a DeepSeek-native
   Codex harness. README includes an explicit DeepSeek `config.toml` sample with
   the default provider, model, planner, retry, and auth settings.

@@ -10,7 +10,6 @@ use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCError;
 use codex_app_server_protocol::JSONRPCResponse;
-use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadRealtimeAppendAudioParams;
@@ -37,8 +36,10 @@ use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::TurnCompletedNotification;
 use codex_app_server_protocol::TurnStartedNotification;
+use codex_config::types::AuthCredentialsStoreMode;
 use codex_features::FEATURES;
 use codex_features::Feature;
+use codex_login::login_with_api_key;
 use codex_protocol::protocol::RealtimeConversationVersion;
 use codex_protocol::protocol::RealtimeOutputModality;
 use codex_protocol::protocol::RealtimeVoice;
@@ -279,10 +280,15 @@ impl RealtimeE2eHarness {
             realtime_version,
             sandbox,
         )?;
+        login_with_api_key(
+            codex_home.path(),
+            "sk-test-key",
+            AuthCredentialsStoreMode::File,
+        )?;
 
-        let mut mcp = McpProcess::new(codex_home.path()).await?;
+        let mut mcp =
+            McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
         timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
-        login_with_api_key(&mut mcp, "sk-test-key").await?;
 
         let thread_start_request_id = mcp
             .send_thread_start_request(ThreadStartParams::default())
@@ -538,10 +544,14 @@ async fn realtime_conversation_streams_v2_notifications() -> Result<()> {
         /*realtime_enabled*/ true,
         StartupContextConfig::Generated,
     )?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
-    login_with_api_key(&mut mcp, "sk-test-key").await?;
 
     let thread_start_request_id = mcp
         .send_thread_start_request(ThreadStartParams::default())
@@ -787,10 +797,14 @@ async fn realtime_text_output_modality_requests_text_output_and_final_transcript
         /*realtime_enabled*/ true,
         StartupContextConfig::Generated,
     )?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
-    login_with_api_key(&mut mcp, "sk-test-key").await?;
 
     let thread_start_request_id = mcp
         .send_thread_start_request(ThreadStartParams::default())
@@ -961,10 +975,14 @@ async fn realtime_conversation_stop_emits_closed_notification() -> Result<()> {
         /*realtime_enabled*/ true,
         StartupContextConfig::Generated,
     )?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
-    login_with_api_key(&mut mcp, "sk-test-key").await?;
 
     let thread_start_request_id = mcp
         .send_thread_start_request(ThreadStartParams::default())
@@ -1057,10 +1075,14 @@ async fn realtime_webrtc_start_emits_sdp_notification() -> Result<()> {
         /*realtime_enabled*/ true,
         StartupContextConfig::Override("startup context"),
     )?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
-    login_with_api_key(&mut mcp, "sk-test-key").await?;
 
     let thread_start_request_id = mcp
         .send_thread_start_request(ThreadStartParams::default())
@@ -1972,10 +1994,14 @@ async fn realtime_webrtc_start_surfaces_backend_error() -> Result<()> {
         /*realtime_enabled*/ true,
         StartupContextConfig::Override("startup context"),
     )?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
-    login_with_api_key(&mut mcp, "sk-test-key").await?;
 
     // Phase 2: start a normal app-server thread and request realtime over WebRTC.
     let thread_start_request_id = mcp
@@ -2084,19 +2110,6 @@ async fn read_notification<T: DeserializeOwned>(mcp: &mut McpProcess, method: &s
         .params
         .context("expected notification params to be present")?;
     Ok(serde_json::from_value(params)?)
-}
-
-async fn login_with_api_key(mcp: &mut McpProcess, api_key: &str) -> Result<()> {
-    let request_id = mcp.send_login_account_api_key_request(api_key).await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let login: LoginAccountResponse = to_response(response)?;
-    assert_eq!(login, LoginAccountResponse::ApiKey {});
-
-    Ok(())
 }
 
 async fn wait_for_started_command_execution(

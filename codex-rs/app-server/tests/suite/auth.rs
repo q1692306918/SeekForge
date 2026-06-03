@@ -10,10 +10,10 @@ use codex_app_server_protocol::GetAuthStatusParams;
 use codex_app_server_protocol::GetAuthStatusResponse;
 use codex_app_server_protocol::JSONRPCError;
 use codex_app_server_protocol::JSONRPCResponse;
-use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::RequestId;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_login::REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR;
+use codex_login::login_with_api_key;
 use pretty_assertions::assert_eq;
 use std::path::Path;
 use tempfile::TempDir;
@@ -92,19 +92,6 @@ shell_snapshot = false
     std::fs::write(config_toml, contents)
 }
 
-async fn login_with_api_key_via_request(mcp: &mut McpProcess, api_key: &str) -> Result<()> {
-    let request_id = mcp.send_login_account_api_key_request(api_key).await?;
-
-    let resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let response: LoginAccountResponse = to_response(resp)?;
-    assert_eq!(response, LoginAccountResponse::ApiKey {});
-    Ok(())
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn get_auth_status_no_auth() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -135,11 +122,14 @@ async fn get_auth_status_no_auth() -> Result<()> {
 async fn get_auth_status_with_api_key() -> Result<()> {
     let codex_home = TempDir::new()?;
     create_config_toml(codex_home.path())?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    login_with_api_key_via_request(&mut mcp, "sk-test-key").await?;
 
     let request_id = mcp
         .send_get_auth_status_request(GetAuthStatusParams {
@@ -163,11 +153,14 @@ async fn get_auth_status_with_api_key() -> Result<()> {
 async fn get_auth_status_with_api_key_when_auth_not_required() -> Result<()> {
     let codex_home = TempDir::new()?;
     create_config_toml_custom_provider(codex_home.path(), /*requires_openai_auth*/ false)?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    login_with_api_key_via_request(&mut mcp, "sk-test-key").await?;
 
     let request_id = mcp
         .send_get_auth_status_request(GetAuthStatusParams {
@@ -196,11 +189,14 @@ async fn get_auth_status_with_api_key_when_auth_not_required() -> Result<()> {
 async fn get_auth_status_with_api_key_no_include_token() -> Result<()> {
     let codex_home = TempDir::new()?;
     create_config_toml(codex_home.path())?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    login_with_api_key_via_request(&mut mcp, "sk-test-key").await?;
 
     // Build params via struct so None field is omitted in wire JSON.
     let params = GetAuthStatusParams {
@@ -224,11 +220,14 @@ async fn get_auth_status_with_api_key_no_include_token() -> Result<()> {
 async fn get_auth_status_with_api_key_refresh_requested() -> Result<()> {
     let codex_home = TempDir::new()?;
     create_config_toml(codex_home.path())?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    login_with_api_key_via_request(&mut mcp, "sk-test-key").await?;
 
     let request_id = mcp
         .send_get_auth_status_request(GetAuthStatusParams {
@@ -522,7 +521,7 @@ async fn login_api_key_rejected_when_forced_chatgpt() -> Result<()> {
 
     assert_eq!(
         err.error.message,
-        "API key login is disabled. Use ChatGPT login instead."
+        "SeekForge does not support native OpenAI/ChatGPT login or auth.json API-key login. Set DEEPSEEK_API_KEY in your environment instead."
     );
     Ok(())
 }

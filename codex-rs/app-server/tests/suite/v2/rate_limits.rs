@@ -8,7 +8,6 @@ use codex_app_server_protocol::AddCreditsNudgeEmailStatus;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::JSONRPCError;
 use codex_app_server_protocol::JSONRPCResponse;
-use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::RateLimitReachedType;
 use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::RateLimitWindow;
@@ -16,6 +15,7 @@ use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::SendAddCreditsNudgeEmailParams;
 use codex_app_server_protocol::SendAddCreditsNudgeEmailResponse;
 use codex_config::types::AuthCredentialsStoreMode;
+use codex_login::login_with_api_key;
 use codex_protocol::account::PlanType as AccountPlanType;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -61,11 +61,14 @@ async fn get_account_rate_limits_requires_auth() -> Result<()> {
 #[tokio::test]
 async fn get_account_rate_limits_requires_chatgpt_auth() -> Result<()> {
     let codex_home = TempDir::new()?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    login_with_api_key(&mut mcp, "sk-test-key").await?;
 
     let request_id = mcp.send_get_account_rate_limits_request().await?;
 
@@ -266,11 +269,14 @@ async fn send_add_credits_nudge_email_requires_auth() -> Result<()> {
 #[tokio::test]
 async fn send_add_credits_nudge_email_requires_chatgpt_auth() -> Result<()> {
     let codex_home = TempDir::new()?;
+    login_with_api_key(
+        codex_home.path(),
+        "sk-test-key",
+        AuthCredentialsStoreMode::File,
+    )?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let mut mcp = McpProcess::new_with_env(codex_home.path(), &[("OPENAI_API_KEY", None)]).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    login_with_api_key(&mut mcp, "sk-test-key").await?;
 
     let request_id = mcp
         .send_add_credits_nudge_email_request(SendAddCreditsNudgeEmailParams {
@@ -433,19 +439,6 @@ async fn send_add_credits_nudge_email_surfaces_backend_failure() -> Result<()> {
         error.error.message
     );
     assert_eq!(error.error.data, None);
-
-    Ok(())
-}
-
-async fn login_with_api_key(mcp: &mut McpProcess, api_key: &str) -> Result<()> {
-    let request_id = mcp.send_login_account_api_key_request(api_key).await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    let login: LoginAccountResponse = to_response(response)?;
-    assert_eq!(login, LoginAccountResponse::ApiKey {});
 
     Ok(())
 }

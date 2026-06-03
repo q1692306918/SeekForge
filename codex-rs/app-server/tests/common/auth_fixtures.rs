@@ -12,6 +12,7 @@ use codex_login::AuthDotJson;
 use codex_login::save_auth;
 use codex_login::token_data::TokenData;
 use codex_login::token_data::parse_chatgpt_jwt_claims;
+use codex_protocol::auth::PlanType as InternalPlanType;
 use serde_json::json;
 
 /// Builder for writing a fake ChatGPT auth.json in tests.
@@ -167,4 +168,33 @@ pub fn write_chatgpt_auth(
     };
 
     save_auth(codex_home, &auth, cli_auth_credentials_store_mode).context("write auth.json")
+}
+
+pub fn write_chatgpt_auth_tokens(
+    codex_home: &Path,
+    access_token: &str,
+    chatgpt_account_id: &str,
+    chatgpt_plan_type: Option<&str>,
+) -> Result<()> {
+    let mut id_token = parse_chatgpt_jwt_claims(access_token).context("parse access token")?;
+    id_token.chatgpt_account_id = Some(chatgpt_account_id.to_string());
+    id_token.chatgpt_plan_type = chatgpt_plan_type
+        .map(InternalPlanType::from_raw_value)
+        .or(id_token.chatgpt_plan_type)
+        .or(Some(InternalPlanType::Unknown("unknown".to_string())));
+
+    let auth = AuthDotJson {
+        auth_mode: Some(AuthMode::ChatgptAuthTokens),
+        openai_api_key: None,
+        tokens: Some(TokenData {
+            id_token,
+            access_token: access_token.to_string(),
+            refresh_token: String::new(),
+            account_id: Some(chatgpt_account_id.to_string()),
+        }),
+        last_refresh: Some(Utc::now()),
+        agent_identity: None,
+    };
+
+    save_auth(codex_home, &auth, AuthCredentialsStoreMode::File).context("write auth.json")
 }
