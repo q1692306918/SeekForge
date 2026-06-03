@@ -721,9 +721,17 @@ Completed or partially completed:
   coverage: model-visible memory updates stay as appended user-role tail
   messages, while previously serialized prefix messages and tool schema bytes
   remain unchanged for the active session.
+- `codex-api` now has DeepSeek background-job notice prefix coverage:
+  asynchronous completion notices stay as appended user-role tail messages,
+  while previously serialized prefix messages and tool schema bytes remain
+  unchanged for the active session.
 - `codex-api` now has DeepSeek compaction-boundary prefix coverage: compaction
   replacement history drops old prompt bytes from outgoing chat requests, then
   subsequent post-compaction turns reuse the new summarized prefix bytes.
+- `codex-api` now includes an ignored, env-gated live DeepSeek cache probe that
+  posts the same serialized Chat Completions request twice with
+  `DEEPSEEK_API_KEY`, rejects outgoing `reasoning_content`, and reports
+  cache-hit, cache-miss, reasoning, and total-token behavior when run manually.
 
 Still planned:
 

@@ -968,6 +968,74 @@ mod chat_completions_tests {
     }
 
     #[test]
+    fn chat_completions_request_keeps_background_job_notice_in_tail() {
+        let mut first = base_responses_request();
+        first.input = vec![
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "first stable user turn".to_string(),
+                }],
+                phase: None,
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "assistant".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "first stable assistant turn".to_string(),
+                }],
+                phase: None,
+            },
+        ];
+        first.tools = vec![json!({
+            "type": "function",
+            "name": "alpha",
+            "description": "Alpha local tool.",
+            "parameters": {"type": "object", "properties": {}}
+        })];
+
+        let mut second = first.clone();
+        second.input.push(ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "<background_job_notice>Agent job job-123 completed and wrote report.csv.</background_job_notice>".to_string(),
+            }],
+            phase: None,
+        });
+        second.input.push(ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "continue after background job".to_string(),
+            }],
+            phase: None,
+        });
+
+        let first_chat = ChatCompletionsApiRequest::from_responses_request(first);
+        let second_chat = ChatCompletionsApiRequest::from_responses_request(second);
+        let first_prefix_messages =
+            serde_json::to_vec(&first_chat.messages).expect("first chat messages should serialize");
+        let second_prefix_messages =
+            serde_json::to_vec(&second_chat.messages[..first_chat.messages.len()])
+                .expect("second chat prefix messages should serialize");
+        let first_tools =
+            serde_json::to_vec(&first_chat.tools).expect("first tools should serialize");
+        let second_tools =
+            serde_json::to_vec(&second_chat.tools).expect("second tools should serialize");
+
+        assert_eq!(first_prefix_messages, second_prefix_messages);
+        assert_eq!(first_tools, second_tools);
+        assert_eq!(second_chat.messages[3].role, "user");
+        assert_eq!(
+            second_chat.messages[3].content,
+            "<background_job_notice>Agent job job-123 completed and wrote report.csv.</background_job_notice>"
+        );
+        assert_eq!(second_chat.messages[4].role, "user");
+    }
+
+    #[test]
     fn chat_completions_request_collapses_and_recovers_prefix_after_compaction() {
         let mut pre_compact = base_responses_request();
         pre_compact.input = vec![
