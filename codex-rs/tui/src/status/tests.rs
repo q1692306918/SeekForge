@@ -1,6 +1,7 @@
 use super::new_status_output;
 use super::new_status_output_with_rate_limits;
 use super::new_status_output_with_rate_limits_handle;
+use super::new_status_output_with_rate_limits_handle_and_pricing;
 use super::rate_limit_snapshot_display;
 use crate::history_cell::HistoryCell;
 use crate::legacy_core::config::Config;
@@ -29,6 +30,7 @@ use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::openai_models::ModelTokenPricing;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
@@ -1217,6 +1219,89 @@ async fn status_card_token_usage_shows_cached_tokens() {
             .iter()
             .any(|line| line.contains("1K new input + 200 cached input")),
         "cached token details should be displayed, got: {rendered:?}"
+    );
+    assert!(
+        rendered.iter().all(|line| !line.contains("Estimated cost")),
+        "estimated cost should stay hidden when pricing is unavailable, got: {rendered:?}"
+    );
+}
+
+#[tokio::test]
+async fn status_card_token_usage_shows_cache_aware_estimated_cost() {
+    let temp_home = TempDir::new().expect("temp home");
+    let mut config = test_config(&temp_home).await;
+    config.model = Some("deepseek-v4-flash".to_string());
+    set_workspace_cwd(&mut config, test_path_buf("/workspace/tests").abs());
+
+    let account_display = test_status_account_display();
+    let usage = TokenUsage {
+        input_tokens: 10_000,
+        cached_input_tokens: 5_000,
+        output_tokens: 8_000,
+        reasoning_output_tokens: 2_000,
+        total_tokens: 18_000,
+    };
+    let pricing = ModelTokenPricing {
+        currency: "USD".to_string(),
+        input_cache_hit_usd_micros_per_million_tokens: Some(2_800),
+        input_cache_miss_usd_micros_per_million_tokens: Some(140_000),
+        output_usd_micros_per_million_tokens: Some(280_000),
+        reasoning_output_usd_micros_per_million_tokens: Some(560_000),
+    };
+
+    let now = chrono::Local
+        .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
+        .single()
+        .expect("timestamp");
+
+    let model_slug = crate::legacy_core::test_support::get_model_offline(config.model.as_deref());
+    let token_info = token_info_for(&model_slug, &config, &usage);
+    let session_id = None;
+    let (composite, _handle) = new_status_output_with_rate_limits_handle_and_pricing(
+        &config,
+        /*runtime_model_provider_base_url*/ None,
+        /*remote_connection*/ None,
+        account_display.as_ref(),
+        Some(&token_info),
+        &usage,
+        &session_id,
+        /*thread_name*/ None,
+        /*forked_from*/ None,
+        &[],
+        /*_plan_type*/ None,
+        now,
+        &model_slug,
+        Some(&pricing),
+        /*collaboration_mode*/ None,
+        /*reasoning_effort_override*/ None,
+        "<none>".to_string(),
+        /*refreshing_rate_limits*/ false,
+    );
+    let rendered = render_lines(&composite.display_lines(/*width*/ 120));
+    let cost_line = rendered
+        .iter()
+        .find(|line| line.contains("Estimated cost"))
+        .unwrap_or_else(|| panic!("estimated cost line should be displayed, got: {rendered:?}"));
+
+    assert!(
+        cost_line.contains("~$0.003514"),
+        "expected total cost in line, got: {cost_line}"
+    );
+    assert!(
+        cost_line.contains("new $0.000700"),
+        "expected fresh input cost in line, got: {cost_line}"
+    );
+    assert!(
+        cost_line.contains("cached $0.000014"),
+        "expected cached input cost in line, got: {cost_line}"
+    );
+    assert!(
+        cost_line.contains("output $0.001680"),
+        "expected output cost in line, got: {cost_line}"
+    );
+    assert!(
+        cost_line.contains("reasoning $0.001120"),
+        "expected reasoning output cost in line, got: {cost_line}"
     );
 }
 

@@ -648,8 +648,10 @@ Completed or partially completed:
 - Static DeepSeek catalog entries exist, including 1M context and a 900,000
   token auto-compact limit.
 - DeepSeek model metadata now carries cache-aware pricing for cache-hit input,
-  cache-miss input, and output tokens so later cost reporting can use the same
-  cached/new usage split already parsed from DeepSeek responses.
+  cache-miss input, output, and optional separately billed reasoning output.
+  TUI `/status` uses that metadata to show a cache-aware estimated session cost
+  split across new input, cached input, output, and reasoning output when the
+  active model preset publishes pricing.
 - Chat Completions request serialization maps Codex messages/tools into
   DeepSeek-compatible chat payloads, always serializes `content`, filters
   outgoing `reasoning_content`, and sorts tool schemas for a stable prefix.
@@ -704,6 +706,9 @@ Still planned:
 - Full local CLI/TUI test verification on Windows currently depends on a usable
   `rusty_v8` artifact or a warmed cache; otherwise builds may fail before tests
   run while downloading or preparing `v8`.
+- On this Windows machine, the focused `codex-tui` status test filter currently
+  fails before executing tests because the `v8` build script cannot create its
+  required symlink without elevated privileges.
 - On this Windows machine, `just test -p codex-core deepseek_` passes when run
   with Git Bash on `PATH` and `just --shell E:/dev-env/git/bin/bash.exe
   --shell-arg -lc`; this covers the filtered DeepSeek tests and the nested

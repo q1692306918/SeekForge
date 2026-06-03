@@ -19,6 +19,7 @@ use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::openai_models::ModelTokenPricing;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_sandbox_summary::summarize_permission_profile;
@@ -69,7 +70,17 @@ pub(crate) struct StatusTokenUsageData {
     cached_input: i64,
     output: i64,
     reasoning_output: i64,
+    cost: Option<StatusTokenCostData>,
     context_window: Option<StatusContextWindowData>,
+}
+
+#[derive(Debug, Clone)]
+struct StatusTokenCostData {
+    total_usd: f64,
+    fresh_input_usd: Option<f64>,
+    cached_input_usd: Option<f64>,
+    output_usd: Option<f64>,
+    reasoning_output_usd: Option<f64>,
 }
 
 #[derive(Debug)]
@@ -122,6 +133,72 @@ struct StatusHistoryCell {
     forked_from: Option<String>,
     token_usage: StatusTokenUsageData,
     rate_limit_state: Arc<RwLock<StatusRateLimitState>>,
+}
+
+fn token_cost_data(
+    total_usage: &TokenUsage,
+    pricing: Option<&ModelTokenPricing>,
+) -> Option<StatusTokenCostData> {
+    let pricing = pricing?;
+    let fresh_input_usd = token_cost_usd(
+        total_usage.non_cached_input(),
+        pricing.input_cache_miss_usd_micros_per_million_tokens,
+    );
+    let cached_input_usd = token_cost_usd(
+        total_usage.cached_input(),
+        pricing.input_cache_hit_usd_micros_per_million_tokens,
+    );
+    let has_reasoning_output_rate = pricing
+        .reasoning_output_usd_micros_per_million_tokens
+        .is_some();
+    let billable_output_tokens = if has_reasoning_output_rate {
+        (total_usage.output_tokens - total_usage.reasoning_output_tokens.max(0)).max(0)
+    } else {
+        total_usage.output_tokens
+    };
+    let output_usd = token_cost_usd(
+        billable_output_tokens,
+        pricing.output_usd_micros_per_million_tokens,
+    );
+    let reasoning_output_usd = token_cost_usd(
+        total_usage.reasoning_output_tokens,
+        pricing.reasoning_output_usd_micros_per_million_tokens,
+    );
+    let total_usd: f64 = [
+        fresh_input_usd,
+        cached_input_usd,
+        output_usd,
+        reasoning_output_usd,
+    ]
+    .into_iter()
+    .flatten()
+    .sum();
+
+    (total_usd > 0.0).then_some(StatusTokenCostData {
+        total_usd,
+        fresh_input_usd,
+        cached_input_usd,
+        output_usd,
+        reasoning_output_usd,
+    })
+}
+
+fn token_cost_usd(tokens: i64, usd_micros_per_million_tokens: Option<i64>) -> Option<f64> {
+    let tokens = tokens.max(0);
+    let rate = usd_micros_per_million_tokens?.max(0);
+    (tokens > 0 && rate > 0).then_some(tokens as f64 * rate as f64 / 1_000_000_000_000.0)
+}
+
+fn format_usd(amount: f64) -> String {
+    if amount <= 0.0 {
+        "$0".to_string()
+    } else if amount < 0.000001 {
+        "<$0.000001".to_string()
+    } else if amount < 1.0 {
+        format!("${amount:.6}")
+    } else {
+        format!("${amount:.2}")
+    }
 }
 
 #[cfg(test)]
@@ -220,6 +297,49 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
     agents_summary: String,
     refreshing_rate_limits: bool,
 ) -> (CompositeHistoryCell, StatusHistoryHandle) {
+    new_status_output_with_rate_limits_handle_and_pricing(
+        config,
+        runtime_model_provider_base_url,
+        remote_connection,
+        account_display,
+        token_info,
+        total_usage,
+        session_id,
+        thread_name,
+        forked_from,
+        rate_limits,
+        _plan_type,
+        now,
+        model_name,
+        /*model_pricing*/ None,
+        collaboration_mode,
+        reasoning_effort_override,
+        agents_summary,
+        refreshing_rate_limits,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn new_status_output_with_rate_limits_handle_and_pricing(
+    config: &Config,
+    runtime_model_provider_base_url: Option<&str>,
+    remote_connection: Option<&RemoteConnectionStatus>,
+    account_display: Option<&StatusAccountDisplay>,
+    token_info: Option<&TokenUsageInfo>,
+    total_usage: &TokenUsage,
+    session_id: &Option<ThreadId>,
+    thread_name: Option<String>,
+    forked_from: Option<ThreadId>,
+    rate_limits: &[RateLimitSnapshotDisplay],
+    _plan_type: Option<PlanType>,
+    now: DateTime<Local>,
+    model_name: &str,
+    model_pricing: Option<&ModelTokenPricing>,
+    collaboration_mode: Option<&str>,
+    reasoning_effort_override: Option<Option<ReasoningEffort>>,
+    agents_summary: String,
+    refreshing_rate_limits: bool,
+) -> (CompositeHistoryCell, StatusHistoryHandle) {
     let command = PlainHistoryCell::new(vec!["/status".magenta().into()]);
     let (card, handle) = StatusHistoryCell::new(
         config,
@@ -235,6 +355,7 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
         _plan_type,
         now,
         model_name,
+        model_pricing,
         collaboration_mode,
         reasoning_effort_override,
         agents_summary,
@@ -263,6 +384,7 @@ impl StatusHistoryCell {
         _plan_type: Option<PlanType>,
         now: DateTime<Local>,
         model_name: &str,
+        model_pricing: Option<&ModelTokenPricing>,
         collaboration_mode: Option<&str>,
         reasoning_effort_override: Option<Option<ReasoningEffort>>,
         agents_summary: String,
@@ -345,6 +467,7 @@ impl StatusHistoryCell {
             cached_input: total_usage.cached_input(),
             output: total_usage.output_tokens,
             reasoning_output: total_usage.reasoning_output_tokens,
+            cost: token_cost_data(total_usage, model_pricing),
             context_window,
         };
         let rate_limits = if rate_limits.len() <= 1 {
@@ -420,6 +543,36 @@ impl StatusHistoryCell {
             }
             spans.push(Span::from(reasoning_output_fmt).dim());
             spans.push(Span::from(" reasoning").dim());
+        }
+
+        Some(spans)
+    }
+
+    fn token_cost_spans(&self) -> Option<Vec<Span<'static>>> {
+        let cost = self.token_usage.cost.as_ref()?;
+        let mut spans = vec![
+            Span::from("~").dim(),
+            Span::from(format_usd(cost.total_usd)),
+        ];
+        let mut details = Vec::new();
+
+        if let Some(fresh_input_usd) = cost.fresh_input_usd {
+            details.push(format!("new {}", format_usd(fresh_input_usd)));
+        }
+        if let Some(cached_input_usd) = cost.cached_input_usd {
+            details.push(format!("cached {}", format_usd(cached_input_usd)));
+        }
+        if let Some(output_usd) = cost.output_usd {
+            details.push(format!("output {}", format_usd(output_usd)));
+        }
+        if let Some(reasoning_output_usd) = cost.reasoning_output_usd {
+            details.push(format!("reasoning {}", format_usd(reasoning_output_usd)));
+        }
+
+        if !details.is_empty() {
+            spans.push(Span::from(" (").dim());
+            spans.push(Span::from(details.join(" + ")).dim());
+            spans.push(Span::from(")").dim());
         }
 
         Some(spans)
@@ -794,6 +947,9 @@ impl HistoryCell for StatusHistoryCell {
         if self.token_usage_detail_spans().is_some() {
             push_label(&mut labels, &mut seen, "Token details");
         }
+        if self.token_usage.cost.is_some() {
+            push_label(&mut labels, &mut seen, "Estimated cost");
+        }
         if self.token_usage.context_window.is_some() {
             push_label(&mut labels, &mut seen, "Context window");
         }
@@ -888,6 +1044,9 @@ impl HistoryCell for StatusHistoryCell {
             lines.push(formatter.line("Token usage", self.token_usage_spans()));
             if let Some(spans) = self.token_usage_detail_spans() {
                 lines.push(formatter.line("Token details", spans));
+            }
+            if let Some(spans) = self.token_cost_spans() {
+                lines.push(formatter.line("Estimated cost", spans));
             }
         }
 
