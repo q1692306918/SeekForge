@@ -539,7 +539,9 @@ Verification:
 Verification:
 
 - Auto compact works with mock DeepSeek provider.
-- Manual `/compact` works in TUI.
+- Manual `/compact` works through the existing TUI slash/app-server routing and
+  has core mock coverage proving DeepSeek stays on Chat Completions local
+  compaction.
 - Rollout history records replacement history.
 - Cache tests show hit-rate collapse/recovery around compaction.
 
@@ -678,6 +680,11 @@ Completed or partially completed:
 - DeepSeek Chat Completions request tests now cover automatic compaction after
   the configured token limit is crossed: the compact prompt is sent as the
   third chat request and the follow-up request carries the generated summary.
+- DeepSeek Chat Completions request tests now cover manual `/compact`: the
+  manual compaction turn uses `/v1/chat/completions`, sends the summarization
+  prompt as a transient user message, and the follow-up request carries the
+  generated summary plus the new user tail without preserving the old assistant
+  text or summarize trigger.
 - Optional DeepSeek planner/executor execution is implemented behind
   `[deepseek_native].planner_enabled`: the planner defaults to
   `deepseek-v4-pro`, runs in a separate no-tool model session, and injects
@@ -709,6 +716,10 @@ Still planned:
 - On this Windows machine, the focused `codex-tui` status test filter currently
   fails before executing tests because the `v8` build script cannot create its
   required symlink without elevated privileges.
+- On this Windows machine, the focused `codex-core`
+  `deepseek_manual_compact_uses_chat_completions_and_carries_summary` test also
+  fails before executing tests for the same `v8` symlink privilege issue, even
+  when rerun through the available escalation path.
 - On this Windows machine, `just test -p codex-core deepseek_` passes when run
   with Git Bash on `PATH` and `just --shell E:/dev-env/git/bin/bash.exe
   --shell-arg -lc`; this covers the filtered DeepSeek tests and the nested

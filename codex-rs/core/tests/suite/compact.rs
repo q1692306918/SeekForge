@@ -1845,6 +1845,144 @@ async fn deepseek_auto_compact_runs_after_token_limit_hit() {
     );
 }
 
+#[cfg_attr(windows, tokio::test(flavor = "multi_thread", worker_threads = 4))]
+#[cfg_attr(not(windows), tokio::test(flavor = "multi_thread", worker_threads = 2))]
+async fn deepseek_manual_compact_uses_chat_completions_and_carries_summary() {
+    skip_if_no_network!();
+
+    let first_user = "hello DeepSeek manual compact";
+    let follow_up_user = "continue after DeepSeek manual compact";
+    let expected_summary = summary_with_prefix(SUMMARY_TEXT);
+
+    let server = start_mock_server().await;
+    let request_log = mount_chat_completions_sse_sequence(
+        &server,
+        vec![
+            chat_text_response("chatcmpl-manual-1", FIRST_REPLY, /*total_tokens*/ 80),
+            chat_text_response("chatcmpl-manual-2", SUMMARY_TEXT, /*total_tokens*/ 90),
+            chat_text_response("chatcmpl-manual-3", FINAL_REPLY, /*total_tokens*/ 100),
+        ],
+    )
+    .await;
+
+    let model_provider = deepseek_model_provider(&server);
+    let mut builder = test_codex().with_config(move |config| {
+        config.model_provider_id = "deepseek".to_string();
+        config.model_provider = model_provider;
+        config.model = Some("deepseek-v4-flash".to_string());
+        set_test_compact_prompt(config);
+    });
+    let codex = builder.build(&server).await.unwrap().codex;
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: first_user.into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await
+        .unwrap();
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    codex.submit(Op::Compact).await.unwrap();
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: follow_up_user.into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await
+        .unwrap();
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let requests = request_log.requests();
+    assert_eq!(
+        requests.len(),
+        3,
+        "expected first turn, manual compact, and follow-up DeepSeek chat requests"
+    );
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.path().ends_with("/v1/chat/completions")),
+        "DeepSeek manual compact should stay on Chat Completions: {:?}",
+        requests
+            .iter()
+            .map(core_test_support::responses::ResponsesRequest::path)
+            .collect::<Vec<_>>()
+    );
+
+    let bodies: Vec<Value> = requests
+        .iter()
+        .map(core_test_support::responses::ResponsesRequest::body_json)
+        .collect();
+    assert!(
+        bodies
+            .iter()
+            .all(|body| body.get("messages").and_then(Value::as_array).is_some()),
+        "DeepSeek requests should use chat messages"
+    );
+
+    let compact_body = &bodies[1];
+    assert_eq!(compact_body["model"].as_str(), Some("deepseek-v4-flash"));
+    let compact_messages = compact_body["messages"]
+        .as_array()
+        .expect("manual compact chat messages");
+    let compact_last = compact_messages
+        .last()
+        .expect("manual compact should append a summarize request");
+    assert_eq!(compact_last["role"].as_str(), Some("user"));
+    assert_eq!(
+        compact_last["content"].as_str(),
+        Some(SUMMARIZATION_PROMPT),
+        "manual compact should send the summarization prompt as a user message",
+    );
+    assert!(
+        compact_messages.iter().any(|message| {
+            message["role"].as_str() == Some("user")
+                && message["content"].as_str() == Some(first_user)
+        }),
+        "manual compact request should include the pre-compaction user history"
+    );
+
+    let follow_up_messages = bodies[2]["messages"]
+        .as_array()
+        .expect("follow-up chat messages");
+    let user_texts: Vec<&str> = follow_up_messages
+        .iter()
+        .filter(|message| message["role"].as_str() == Some("user"))
+        .filter_map(|message| message["content"].as_str())
+        .collect();
+    assert!(user_texts.contains(&first_user));
+    assert!(user_texts.contains(&follow_up_user));
+    assert!(user_texts.contains(&expected_summary.as_str()));
+    assert!(
+        !user_texts.contains(&SUMMARIZATION_PROMPT),
+        "follow-up request should not carry the transient summarize trigger"
+    );
+    assert!(
+        !follow_up_messages.iter().any(|message| {
+            message["role"].as_str() == Some("assistant")
+                && message["content"].as_str() == Some(FIRST_REPLY)
+        }),
+        "follow-up request should not preserve pre-compaction assistant text"
+    );
+}
+
 // Windows CI only: bump to 4 workers to prevent SSE/event starvation and test timeouts.
 #[cfg_attr(windows, tokio::test(flavor = "multi_thread", worker_threads = 4))]
 #[cfg_attr(not(windows), tokio::test(flavor = "multi_thread", worker_threads = 2))]
